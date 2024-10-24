@@ -9,12 +9,14 @@ Linux ホストマシンを持っている方はそちらを使用するとい�
 
 ここでは、 [Lima](https://github.com/lima-vm/lima) を用いた開発環境構築方法を解説します。 Lima は VM の1つで、 Apple Silicon などの場合でも開発できるようにするために利用します。
 
-# Lima の開発環境を構築
+（[Multi-platform build](https://docs.docker.com/build/building/multi-platform/) を利用すると Docker 環境でも開発できる可能性はありますが、現在のところ動作確認ができていません。）
+
+## Lima の開発環境を構築
 ここでは Mac を想定してインストール作業を解説します。
 
 他の環境の場合や、最新の情報は Lima の[ドキュメント](https://lima-vm.io/docs/installation/)を参照してください。
 
-## Lima のインストール
+### Lima のインストール
 まずはホストマシンに Lima をインストールします。
 
 ```shell
@@ -24,7 +26,7 @@ limactl --version
 # limactl version 0.23.2
 ```
 
-## Lima のインスタンスを作成
+### Lima のインスタンスを作成
 ubuntu のテンプレートを利用して、 Lima のインスタンスを作成します。
 
 今回は `go-debugger` という名前にしていますが、こちらは任意の名前で大丈夫です。
@@ -71,19 +73,19 @@ mounts:
 arch: x86_64
 ```
 
-## Lima インスタンスの起動
+### Lima インスタンスの起動
 
 
 ```shell
 limactl start go-debugger
 ```
 
-## Lima 環境に入る
+### Lima 環境に入る
 
 ```shell
 limactl shell go-debugger
 ```
-# Go のインストール
+## Go のインストール
 
 Lima 環境に入ったら、 Go をインストールします。
 
@@ -106,4 +108,22 @@ source $HOME/.profile
 
 go version
 # go version go1.23.2 linux/amd64
+```
+
+## Go プロジェクトの作成
+Go のインストールが終わったら、カレントディレクトリがマウントしているディレクトリ（今回は `/Users/<username>/lima/debugger`） となっていることを確認して、 `go mod init` を実行します。モジュールのパスは適宜変更してください。
+```shell
+go mod init example.com/go-debugger
+```
+
+## テキストエディタの準備
+どうやって開発するかは、読者に委ねます。筆者がパッと思いつくのは以下の手法になりますが、ホストマシン上で開発するとおそらく Linux でしか扱えない関数などの補完が働かないので注意が必要です。
+
+- VSCode などを利用してホストマシンからリモート接続
+- Lima 環境内で vim 環境をつくる
+- リモート接続せずに、ホストマシン上で開発
+
+リモート接続して開発する場合は、以下のコマンドを実行すると ssh 接続の設定を追加できます。
+```shell
+cat /Users/<username>/.lima/go-debugger/ssh.config >> ~/.ssh/config
 ```
