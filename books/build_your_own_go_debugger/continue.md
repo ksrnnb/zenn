@@ -166,7 +166,7 @@ go-debugger/
   └── main.go
 ```
 
-ビルドしたプログラムを実行するときに、 [ptrace](https://man7.org/linux/man-pages/man2/ptrace.2.html) を使用するために、 `cmd.SysProcAttr` で ptrace のフラグを true に設定しています。この設定によって、プログラムを追跡可能になります。 
+ビルドしたプログラムを実行するときに、 [ptrace](https://man7.org/linux/man-pages/man2/ptrace.2.html) を使用するために、 `cmd.SysProcAttr` の `Ptrace` フィールドを true に設定しています。この設定によって、プログラムを追跡可能になります。 
 その後、 `cmd.Start` によってプログラムを子プロセスで実行します。
 
 ```go:go-debugger/execute.go
@@ -216,9 +216,9 @@ _, _, err1 = RawSyscall(SYS_EXECVE,
 
 
 ## ptrace
-Ptrace フラグがどのように使われているのかを調べてみると、以下のように Ptrace フラグを使っている[コード](https://cs.opensource.google/go/go/+/refs/tags/go1.23.2:src/syscall/exec_linux.go;l=641-646)がみつかります。
-fork によって生成された子プロセスで ptrace システムコールを実行しており、 `PTRACE_TRACEME` を渡しています。 これを実行すると、自身のプログラムが親プロセスに追跡されている状態になります。さらに `PTRACE_TRACEME` を実行したプログラムは、シグナルを受信したときと execve を実行したときにプログラムを停止するようになります。
-したがって、 `cmd.SysProcAttr` で ptrace のフラグを true にして、 `cmd.Start` を実行すると、プログラムは実行されずに停止します。
+`syscall.SysProcAttr` の `Ptrace` フィールドがどのように使われているのかを調べてみると、以下のように `Ptrace` フィールドを使っている[コード](https://cs.opensource.google/go/go/+/refs/tags/go1.23.2:src/syscall/exec_linux.go;l=641-646)がみつかります。
+fork によって生成された子プロセス（tracee）で ptrace システムコールを実行しており、 `PTRACE_TRACEME` を渡しています。 これを実行すると tracee が親プロセス（tracer）に追跡されている状態になります。さらに tracee が execve を実行すると一時停止して、 tracer が次の ptrace を実行するまで処理を停止します。
+したがって、 `cmd.SysProcAttr`　の `Ptrace` フィールドを true にして、 `cmd.Start` を実行すると、プログラムは実行されずに停止します。
 
 ```go:exec_linux.go
 // Fork succeeded, now in child.
@@ -263,6 +263,8 @@ go run . -path ./cmd/helloworld/
 
 その後プログラムの処理を再開するために、`syscall.PtraceCont` を実行します。これは内部的には `PTRACE_CONT` を渡して ptrace システムコールを実行しています。これは追跡中のプログラムが停止している場合、処理を再開するためのものです。これに関しても詳細は次章で解説します。
 
+continue の後も、 `unix.Wait4` で子プロセスの処理が再開するまで待機するようにしておきます。
+
 ```diff:go-debugger/main.go
 func main() {
 	...
@@ -280,10 +282,16 @@ func main() {
 +		fmt.Fprintf(os.Stderr, "faield to execute ptrace cont: %s\n", err)
 +		return
 +	}
+
++	_, err = unix.Wait4(pid, &ws, unix.WALL, nil)
++	if err != nil {
++		fmt.Fprintf(os.Stderr, "failed to wait pid %d\n", pid)
++		return
++	}
 }
 ```
 
-それではプログラムを実行してみましょう。以下のように Hello, World! が出力されていたら成功です。プロンプトの後に出力されることもありますが、問題ありません。
+それではプログラムを実行してみましょう。以下のように Hello, World! が出力されていたら成功です。プロンプトの後に出力されることもありますが、あまり気にしなくて大丈夫です。
 
 ```shell
 go run . -path ./cmd/helloworld/
