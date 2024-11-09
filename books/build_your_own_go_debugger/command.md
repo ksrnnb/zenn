@@ -1,5 +1,5 @@
 ---
-title: "コマンド入力の実装（執筆中）"
+title: "コマンド入力の実装"
 ---
 
 # コマンドの入力
@@ -125,6 +125,7 @@ func (d *Debugger) wait() (unix.WaitStatus, error) {
 
 ## command.go の実装
 Commands 構造体は、CLI でデバッガを操作する時のコマンドの情報を持ちます。コマンドの名前とそれに対応する関数をフィールドにもつ command 構造体を定義しています。
+ユーザーの入力が aliases のどれかに一致していたら対応する関数を実行するようになります。したがって、 continue の場合は `continue` または `c` を入力すると実行できます。
 
 ```go:go-debugger/terminal/command.go
 package terminal
@@ -170,7 +171,7 @@ func quit(dbg *debugger.Debugger, args string) error {
 
 ## terminal.go の実装
 Terminal の Run メソッドを実行すると、デバッガが起動してインタラクティブに操作することができるようになります。
-for 文で繰り返し入力を受け付けるようになっていますが、コマンド実行時に `ErrDebuggeeFinished` が返ってきた場合は break して処理を終了します。例として quit コマンドを実行すると 、ErrDebuggeeFinished` が返ってきて入力処理を終了できます。
+for 文で繰り返し入力を受け付けるようになっていますが、コマンド実行時に `ErrDebuggeeFinished` が返ってきた場合は break して処理を終了します。
 
 ```go:go-debugger/terminal/terminal.go
 package terminal
@@ -301,8 +302,7 @@ func main() {
 ```
 
 ## デバッガの実行
-ひととおり実装できたので、動作を確認してみます。
-まずは quit を試してみます。
+ひととおり実装できたので、動作を確認してみます。まずは quit を試してみます。
 ```bash
 go run . -path ./cmd/helloworld/
 
@@ -339,7 +339,7 @@ cmd.SysProcAttr = &syscall.SysProcAttr{
 }
 ```
 
-そのうえで、 cleanup 関数を作成し、子プロセスのグループに対して SIGTERM のシグナルを送信して、子プロセスを終了します。
+そのうえで、 cleanup メソッドを作成し、子プロセスのグループに対して SIGTERM のシグナルを送信して、子プロセスを終了します。
 ```go:go-debugger/debugger/debugger.go
 func (d *Debugger) cleanup() error {
 	if err := syscall.Kill(-d.pid, syscall.SIGTERM); err != nil {
@@ -374,7 +374,6 @@ ps -a
 
 ### Setpgid
 なぜこのような変更をしたのか、簡単に説明します。
-
 まず、 SysProcAttr の Setpgid を true にしておくことで、コマンド実行時に [setpgid システムコールを実行するようになります](https://cs.opensource.google/go/go/+/refs/tags/go1.23.2:src/syscall/exec_linux.go;l=386-393)。
 
 ```go:exec_linux.go
@@ -406,8 +405,7 @@ if sys.Setpgid || sys.Foreground {
 > If pid is less than -1, then sig is sent to every process in the process group whose ID is -pid.
 
 ## continue の挙動修正
-continue を実行すると、なぜか2回目で Hello, World! が出力されている原因を調べるために、 Continue メソッドを以下のように更新してください。
-WaitStatus を詳しく調べることで、子プロセスがどのシグナルを受信して停止したのかを出力します。
+continue を実行すると 2 回目で Hello, World! が出力される原因を調べるために Continue メソッドを以下のように更新します。 WaitStatus を詳しく調べることで、子プロセスがどのシグナルを受信して停止したのかを出力します。
 
 ```diff:go-debugger/debugger/debugger.go
 func (d *Debugger) Continue() error {
@@ -471,3 +469,5 @@ go run . -path ./cmd/helloworld/
 # go-debugger gracefully shut down
 ```
 
+### SIGURG シグナル
+Go プログラムをデバッグするとしばしば debuggee が SIGURG シグナルを受信することがあります。これは Go 1.14 以降でみられる挙動になります。 Go 1.14 以降はゴルーチンのプリエンプションに SIGURG シグナルを使っているため、プリエンプトされるたびに SIGURG シグナルを受信します。この挙動に関しては、[Non-cooperative goroutine preemption](https://go.googlesource.com/proposal/+/master/design/24543-non-cooperative-preemption.md) というプロポーザルに詳細が記載されています。
