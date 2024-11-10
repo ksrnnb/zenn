@@ -25,7 +25,7 @@ go-debugger/
 ```
 
 ## debbugger.go の実装
-いままで、 execute.go などで実行していた処理を debugger パッケージの中で実行するようにします。この debugger パッケージを terminal パッケージ側から利用するような構成になります。
+今まで execute.go などで実行していた処理を debugger パッケージの中で実行するようにします。この debugger パッケージを terminal パッケージ側から利用するような構成になります。
 
 まず、 debuggee（デバッグ対象のプログラム）をビルドした成果物のパスを Config で受け取り、 Debugger 構造体を作成します。その後、 Launch メソッドを実行して、子プロセスを生成してデバッグを開始します。
 
@@ -471,3 +471,4 @@ go run . -path ./cmd/helloworld/
 
 ### SIGURG シグナル
 Go プログラムをデバッグするとしばしば debuggee が SIGURG シグナルを受信することがあります。これは Go 1.14 以降でみられる挙動になります。 Go 1.14 以降はゴルーチンのプリエンプションに SIGURG シグナルを使っているため、プリエンプトされるたびに SIGURG シグナルを受信します。この挙動に関しては、[Non-cooperative goroutine preemption](https://go.googlesource.com/proposal/+/master/design/24543-non-cooperative-preemption.md) というプロポーザルに詳細が記載されています。
+Hello, World! プログラムのように単純なプログラムでもゴルーチンのプリエンプションが発生しており、 SIGURG シグナルを受信しています。[continue を実装した章](https://zenn.dev/ksrnnb/books/build_your_own_go_debugger/viewer/continue)では、同じプログラムをビルドして continue を1回しか実行していないにも関わらず Hello, World! が出力されたことに違和感を抱いたかもいらっしゃるかもしれません。実は SIGURG シグナルを受信しているのですが、親プロセス（デバッガ）がそのまま処理を終了したため、子プロセスの追跡が終了して1回の continue で Hello, World! が出力された、ということになります。
