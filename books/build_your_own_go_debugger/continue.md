@@ -1,5 +1,5 @@
 ---
-title: "continue コマンドの実装"
+title: "continue の実装"
 ---
 
 # Hello, World! プログラムの実行
