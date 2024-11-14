@@ -29,8 +29,6 @@ go-debugger/
 
 まず、 debuggee（デバッグ対象のプログラム）をビルドした成果物のパスを Config で受け取り、 Debugger 構造体を作成します。その後、 Launch メソッドを実行して、子プロセスを生成してデバッグを開始します。
 
-また、 Continue メソッドを実装して Continue を任意のタイミングで実行できるようにしておきます。 Continue メソッド内では、 Wait4 を実行した後に WaitStatus を確認して子プロセスが終了したかどうかをチェックしています。子プロセスが終了していた場合は、 `ErrDebuggeeFinished` を返すようにします。
-Quit メソッドは単純に `ErrDebuggeeFinished` を返すだけになります。
 
 ```go:go-debugger/debugger/debugger.go
 package debugger
@@ -41,8 +39,6 @@ import (
 	"os"
 	"os/exec"
 	"syscall"
-
-	"golang.org/x/sys/unix"
 )
 
 // ErrDebuggeeFinished is used when debuggee processs is finished.
@@ -89,7 +85,12 @@ func (d *Debugger) Launch() error {
 
 	return nil
 }
+```
 
+さらに Continue メソッドを実装して Continue を任意のタイミングで実行できるようにしておきます。 Continue メソッド内では、 Wait4 を実行した後に WaitStatus を確認して子プロセスが終了したかどうかをチェックしています。子プロセスが終了していた場合は、 `ErrDebuggeeFinished` を返すようにします。
+Quit メソッドは単純に `ErrDebuggeeFinished` を返すだけになります。
+
+```go:go-debugger/debugger/debugger.go
 func (d *Debugger) Continue() error {
 	if err := syscall.PtraceCont(d.pid, 0); err != nil {
 		return fmt.Errorf("faield to execute ptrace cont: %w", err)
@@ -112,9 +113,9 @@ func (d *Debugger) Quit() error {
 	return ErrDebuggeeFinished
 }
 
-func (d *Debugger) wait() (unix.WaitStatus, error) {
-	var ws unix.WaitStatus
-	_, err := unix.Wait4(d.pid, &ws, unix.WALL, nil)
+func (d *Debugger) wait() (syscall.WaitStatus, error) {
+	var ws syscall.WaitStatus
+	_, err := syscall.Wait4(d.pid, &ws, syscall.WALL, nil)
 	if err != nil {
 		return 0, fmt.Errorf("failed to wait pid %d", d.pid)
 	}
@@ -170,8 +171,8 @@ func quit(dbg *debugger.Debugger, args []string) error {
 ```
 
 ## terminal.go の実装
-Terminal の Run メソッドを実行すると、デバッガが起動してインタラクティブに操作することができるようになります。
-for 文で繰り返し入力を受け付けるようになっていますが、コマンド実行時に `ErrDebuggeeFinished` が返ってきた場合は break して処理を終了します。
+
+Terminal の初期化は以下のようになります。先ほど定義した Debugger と Commands を渡します。
 
 ```go:go-debugger/terminal/terminal.go
 package terminal
@@ -197,7 +198,12 @@ type Terminal struct {
 func NewTerminal(debugger *debugger.Debugger, cmds *Commands) *Terminal {
 	return &Terminal{debugger, cmds}
 }
+```
 
+Terminal の Run メソッドを実行すると、デバッガが起動してインタラクティブに操作することができるようになります。
+for 文で繰り返し入力を受け付けるようになっていますが、コマンド実行時に `ErrDebuggeeFinished` が返ってきた場合は break して処理を終了します。
+
+```go:go-debugger/terminal/terminal.go
 func (t *Terminal) Run() error {
 	sc := bufio.NewScanner(os.Stdin)
 

@@ -259,11 +259,11 @@ go run . -path ./cmd/helloworld/
 ```
 
 # continue で処理を再開する
-まず、 `unix.Wait4` で子プロセスが停止するまで待機します。これは内部的に [wait4 システムコール](https://man7.org/linux/man-pages/man2/wait4.2.html)を実行しています。
+まず、 `syscall.Wait4` で子プロセスが停止するまで待機します。これは内部的に [wait4 システムコール](https://man7.org/linux/man-pages/man2/wait4.2.html)を実行しています。
 
 その後プログラムの処理を再開するために、`syscall.PtraceCont` を実行します。これは内部的には `PTRACE_CONT` を渡して ptrace システムコールを実行しています。これは追跡中のプログラムが停止している場合、処理を再開するためのものです。これに関しても詳細は次章で解説します。
 
-continue の後も、 `unix.Wait4` で子プロセスの処理が再開するまで待機するようにしておきます。
+continue の後も、 `syscall.Wait4` で子プロセスの処理が再開するまで待機するようにしておきます。
 
 ```diff:go-debugger/main.go
 func main() {
@@ -271,8 +271,8 @@ func main() {
 
 	fmt.Printf("pid of debuggee program is %d\n", pid)
 
-+	var ws unix.WaitStatus
-+	_, err = unix.Wait4(pid, &ws, unix.WALL, nil)
++	var ws syscall.WaitStatus
++	_, err = syscall.Wait4(pid, &ws, syscall.WALL, nil)
 +	if err != nil {
 +		fmt.Fprintf(os.Stderr, "failed to wait pid %d\n", pid)
 +		return
@@ -283,7 +283,7 @@ func main() {
 +		return
 +	}
 
-+	_, err = unix.Wait4(pid, &ws, unix.WALL, nil)
++	_, err = syscall.Wait4(pid, &ws, syscall.WALL, nil)
 +	if err != nil {
 +		fmt.Fprintf(os.Stderr, "failed to wait pid %d\n", pid)
 +		return
