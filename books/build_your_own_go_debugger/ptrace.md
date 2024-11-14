@@ -50,10 +50,10 @@ pid_t wait4(pid_t pid, int *_Nullable wstatus, int options,
 ```
 
 # Go での使い方
-Go では [syscall パッケージ](https://pkg.go.dev/syscall)や [sys パッケージ](https://pkg.go.dev/golang.org/x/sys)が用意されています。これらは OS によって使用できない関数もあります。
-この本では Linux 環境を前提としていますが、それは `syscall.PtraceXxx` や `sys/unix` の `Wait4` などを利用するためになります。
+Go では [syscall パッケージ](https://pkg.go.dev/syscall)が用意されています。これは OS によって使用できない関数もあります。
+この本では Linux 環境を前提としていますが、それは `syscall.PtraceXxx` などを利用するためになります。
 
-Go での簡単な例を以下に示します。この例では、指定した pid のプロセス（tracee）に対して、 [syscall.PtraceCont](https://pkg.go.dev/syscall#PtraceCont) で tracee の処理を再開し、 [unix.Wait4](https://pkg.go.dev/golang.org/x/sys@v0.26.0/unix#Wait4) で tracee の状態が変化するまで待機しています。
+Go での簡単な例を以下に示します。この例では、指定した pid のプロセス（tracee）に対して、 [syscall.PtraceCont](https://pkg.go.dev/syscall#PtraceCont) で tracee の処理を再開し、 [syscall.Wait4](https://pkg.go.dev/syscall#Wait4) で tracee の状態が変化するまで待機しています。
 
 [syscall.PtracePeekData](https://pkg.go.dev/syscall#PtracePeekData) など、他の ptrace オペレーションに対応するメソッドもあるので適宜ドキュメントを参照してください。
 
@@ -64,8 +64,6 @@ import (
 	"fmt"
 	"os"
 	"syscall"
-
-	"golang.org/x/sys/unix"
 )
 
 func main() {
@@ -77,8 +75,8 @@ func main() {
 		return
 	}
 
-	var ws unix.WaitStatus
-	_, err = unix.Wait4(pid, &ws, unix.WALL, nil)
+	var ws syscall.WaitStatus
+	_, err = syscall.Wait4(pid, &ws, syscall.WALL, nil)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "failed to wait pid %d\n", pid)
 		return
