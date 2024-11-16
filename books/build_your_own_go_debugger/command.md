@@ -27,7 +27,7 @@ go-debugger/
 ## debbugger.go の実装
 今まで execute.go などで実行していた処理を debugger パッケージの中で実行するようにします。この debugger パッケージを terminal パッケージ側から利用するような構成になります。
 
-まず、 debuggee（デバッグ対象のプログラム）をビルドした成果物のパスを Config で受け取り、 Debugger 構造体を作成します。その後、 Launch メソッドを実行して、子プロセスを生成してデバッグを開始します。
+まず、 debuggee（デバッグ対象のプログラム）をビルドした成果物のパスを Config で受け取り、 Debugger 構造体を作成します。その後、 Launch メソッドを実行します。
 
 
 ```go:go-debugger/debugger/debugger.go
@@ -61,7 +61,11 @@ func NewDebugger(config *Config) (*Debugger, error) {
 
 	return d, nil
 }
+```
 
+Launch メソッドの実装は以下になります。 continue 実装時に execute.go で実行していた処理をこのメソッドに移行しています。
+
+```go:go-debugger/debugger/debugger.go
 func (d *Debugger) Launch() error {
 	cmd := exec.Command(d.config.DebuggeePath)
 	cmd.Stdin = os.Stdin
@@ -87,7 +91,8 @@ func (d *Debugger) Launch() error {
 }
 ```
 
-さらに Continue メソッドを実装して Continue を任意のタイミングで実行できるようにしておきます。 Continue メソッド内では、 Wait4 を実行した後に WaitStatus を確認して子プロセスが終了したかどうかをチェックしています。子プロセスが終了していた場合は、 `ErrDebuggeeFinished` を返すようにします。
+さらに Continue メソッドを実装して Continue を任意のタイミングで実行できるようにしておきます。先ほどの Launch メソッドや Continue メソッド内では、 d.wait() を実行しています。このメソッドでは、 Wait4 を実行した後に WaitStatus を確認して子プロセスが終了したかどうかをチェックしています。子プロセスが終了していた場合は、 `ErrDebuggeeFinished` を返すようにします。このエラーは後ほどハンドリングします。
+
 Quit メソッドは単純に `ErrDebuggeeFinished` を返すだけになります。
 
 ```go:go-debugger/debugger/debugger.go
@@ -96,14 +101,9 @@ func (d *Debugger) Continue() error {
 		return fmt.Errorf("faield to execute ptrace cont: %w", err)
 	}
 
-	ws, err := d.wait()
+	_, err := d.wait()
 	if err != nil {
 		return err
-	}
-
-	// ws.Exited() will be true when child process is finished.
-	if ws.Exited() {
-		return ErrDebuggeeFinished
 	}
 
 	return nil
@@ -118,6 +118,11 @@ func (d *Debugger) wait() (syscall.WaitStatus, error) {
 	_, err := syscall.Wait4(d.pid, &ws, syscall.WALL, nil)
 	if err != nil {
 		return 0, fmt.Errorf("failed to wait pid %d", d.pid)
+	}
+
+	// ws.Exited() will be true when child process is finished.
+	if ws.Exited() {
+		return 0, ErrDebuggeeFinished
 	}
 
 	return ws, nil
@@ -255,55 +260,52 @@ func (t *Terminal) Find(commandWithArgs string) (cmdfunc, error) {
 ## main.go の更新
 最後に、 main.go を以下のように更新してデバッガを CLI で起動します。
 
-```go:go-debugger/main.go
-package main
-
-import (
-	"flag"
-	"fmt"
-	"log"
-	"os"
-
-	"github.com/ksrnnb/go-debugger/debugger"
-	"github.com/ksrnnb/go-debugger/terminal"
-)
-
-var debuggeePath string
-
-func init() {
-	flag.StringVar(&debuggeePath, "path", "", "path of debuggee program")
-}
-
+```diff:go-debugger/main.go
 func main() {
-	flag.Parse()
-
-	if debuggeePath == "" {
-		log.Fatalf("path of debuggee program must be given")
-	}
-
-	absDebuggeePath, cleanup, err := buildDebuggeeProgram(debuggeePath)
-	if err != nil {
-		log.Fatalf("failed to build debuggee program: %s", err)
-	}
+	...
 	defer cleanup()
+-	pid, err := executeDebuggeeProcess(absDebuggeePath)
+-	if err != nil {
+-		log.Fatalf("failed to execute debugee program: %s", err)
+-	}
+-
+-	fmt.Printf("pid of debuggee program is %d\n", pid)
+-
+-	var ws syscall.WaitStatus
+-	_, err = syscall.Wait4(pid, &ws, syscall.WALL, nil)
+-	if err != nil {
+-		fmt.Fprintf(os.Stderr, "failed to wait pid %d\n", pid)
+-		return
+-	}
+-
+-	if err := syscall.PtraceCont(pid, 0); err != nil {
+-		fmt.Fprintf(os.Stderr, "faield to execute ptrace cont: %s\n", err)
+-		return
+-	}
+-
+-	_, err = syscall.Wait4(pid, &ws, syscall.WALL, nil)
+-	if err != nil {
+-		fmt.Fprintf(os.Stderr, "failed to wait pid %d\n", pid)
+-		return
+-	}
 
-	d, err := debugger.NewDebugger(&debugger.Config{
-		DebuggeePath: absDebuggeePath,
-	})
-	if err != nil {
-		fmt.Fprintf(os.Stderr, "failed to initialize debugger: %s", err)
-		return
-	}
-
-	cmds := terminal.NewCommands()
-	term := terminal.NewTerminal(d, cmds)
-
-	if err := term.Run(); err != nil {
-		fmt.Fprintf(os.Stderr, "failed to run terminal: %s", err)
-		return
-	}
-
-	fmt.Printf("go-debugger gracefully shut down\n")
++	d, err := debugger.NewDebugger(&debugger.Config{
++		DebuggeePath: absDebuggeePath,
++	})
++	if err != nil {
++		fmt.Fprintf(os.Stderr, "failed to initialize debugger: %s", err)
++		return
++	}
++
++	cmds := terminal.NewCommands()
++	term := terminal.NewTerminal(d, cmds)
++
++	if err := term.Run(); err != nil {
++		fmt.Fprintf(os.Stderr, "failed to run terminal: %s", err)
++		return
++	}
++
++	fmt.Printf("go-debugger gracefully shut down\n")
 }
 ```
 
@@ -361,7 +363,7 @@ func (d *Debugger) Quit() error {
 +	if err := d.cleanup(); err != nil {
 +		return fmt.Errorf("failed to cleanup: %s", err)
 +	}
-
++
 	return ErrDebuggeeFinished
 }
 ```
@@ -417,8 +419,10 @@ continue を実行すると 2 回目で Hello, World! が出力される原因�
 func (d *Debugger) Continue() error {
 	...
 
-	if ws.Exited() {
-		return ErrDebuggeeFinished
+-	_, err := d.wait()
++	ws, err := d.wait()
+	if err != nil {
+		return err
 	}
 
 +	if ws.Stopped() {
@@ -447,10 +451,6 @@ SIGURG シグナルを受信している理由は後述しますが、いった�
 ```diff:go-debugger/debugger/debugger.go
 func (d *Debugger) Continue() error {
 	...
-
-	if ws.Exited() {
-		return ErrDebuggeeFinished
-	}
 
 -	if ws.Stopped() {
 -		fmt.Printf("StopSignal: %s\n", ws.StopSignal())
