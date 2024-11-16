@@ -63,7 +63,7 @@ import (
 
 // buildDebuggeeProgram build go program to debug and returns cleanup function.
 func buildDebuggeeProgram(path string) (absPath string, cleanup func() error, err error) {
-    // ビルドするファイル名を __debug__1730159170 のような形式にする
+	// Name the file to build in the format __debug__1730159170
 	name := fmt.Sprintf("__debug__%d", time.Now().Unix())
 	cmd := exec.Command("go", "build", "-o", name, "-gcflags", "all=-N -l", path)
 	cmd.Stdout = os.Stdout
@@ -73,7 +73,7 @@ func buildDebuggeeProgram(path string) (absPath string, cleanup func() error, er
 		return "", nil, fmt.Errorf("failed to build go program: %w", err)
 	}
 
-    // ビルドしたファイルの絶対パスを取得
+	// Get the absolute path of the built file
 	absPath, err = filepath.Abs(name)
 	if err != nil {
 		return "", nil, fmt.Errorf("failed to get absolute path of debuggee program: %w", err)

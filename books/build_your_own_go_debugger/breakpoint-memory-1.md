@@ -46,7 +46,7 @@ func NewBreakpoint(pid int, addr uintptr) (*Breakpoint, error) {
 }
 ```
 
-ブレークポイントを設定する時は Enable メソッドを呼びます。ここでは PtracePeekData 関数でオリジナルの命令を保持しておき、先頭1バイトを INT3 命令に置き換えたものを PtracePokeData で書き込みます。
+ブレークポイントを設定する時は Enable メソッドを呼びます。ここでは PtracePeekData 関数でオリジナルの命令を保持しておき、先頭1バイトを INT3 命令（0xcc）に置き換えたものを PtracePokeData で書き込みます。
 INT3 命令の詳細については後述しますが、この命令が実行されると debuggee は一時停止します。
 
 ```go:go-debugger/debuger/breakpoint.go
@@ -129,10 +129,6 @@ debuggee が INT3 命令を実行すると SIGTRAP シグナルを受信して�
 ```diff:go-debugger/debugger/debugger.go
 func (d *Debugger) Continue() error {
 	...
-
-	if ws.Exited() {
-		return ErrDebuggeeFinished
-	}
 
 +	if ws.Stopped() {
 +		switch ws.StopSignal() {
@@ -264,9 +260,10 @@ go run . -path ./cmd/helloworld/
 
 ```diff:go-debugger/main.go
 func init() {
-	flag.StringVar(&debuggeePath, "path", "", "path of debuggee program")
 +	fmt.Printf("start process id: %d\n", syscall.Getpid())
 +	fmt.Printf("start thread id: %d\n", syscall.Gettid())
++
+	flag.StringVar(&debuggeePath, "path", "", "path of debuggee program")
 }
 ```
 
@@ -283,7 +280,7 @@ if err := cmdFn(t.debugger, args); err != nil {
 }
 ```
 
-この状態で実行してみます。すると、エラーが起きた時にはプログラム開始時とスレッド ID が異なっていることが分かります。 PTRACE_TRACEME を実行したときのスレッドと異なる場合は ptrace が実行できないので `no such process` というエラーが発生していました。
+この状態で実行してみます。すると、エラーが起きた時にはプログラム開始時とスレッド ID が異なっていることが分かります。 PTRACE_TRACEME を実行したときのスレッドと異なる場合は ptrace が実行できません。そのため、 `no such process` というエラーが発生したことが分かります。
 
 ```bash
 go run . -path ./cmd/helloworld/
@@ -313,10 +310,10 @@ Go ランタイムの仕様でゴルーチンが実行されるスレッドは�
 ```diff:go-debugger/main.go
 func init() {
 +	runtime.LockOSThread()
-+
-	flag.StringVar(&debuggeePath, "path", "", "path of debuggee program")
 -	fmt.Printf("start process id: %d\n", syscall.Getpid())
 -	fmt.Printf("start thread id: %d\n", syscall.Gettid())
+
+	flag.StringVar(&debuggeePath, "path", "", "path of debuggee program")
 }
 ```
 
@@ -331,7 +328,7 @@ if err := cmdFn(t.debugger, args); err != nil {
 }
 ```
 
-この状態で実行してみます。ブレークポイントにヒットした後に再度 continue すると処理が停止してしまいます。 Ctrl + C で処理を中断すると、 illegal instruction というエラーが発生していることがわかります。これは INT3 命令に書き換えたあと、元に戻さずにそのまま実行を続けようとしているためです。この次章で修正していきます。
+この状態で実行してみます。ブレークポイントにヒットした後に再度 continue すると処理が停止してしまいます。 Ctrl + C で処理を中断すると、 illegal instruction というエラーが発生していることがわかります。これは INT3 命令に書き換えたあと、元に戻さずにそのまま実行を続けようとしているためです。これは次の章で修正していきます。
 
 ```bash
 go run . -path ./cmd/helloworld/
@@ -347,7 +344,7 @@ go run . -path ./cmd/helloworld/
 ```
 
 # INT3 命令
-最後に、 INT3 命令について解説しておきます。今回、命令の先頭1バイトを INT3 命令に置き換えることで、ブレークポイントを実装しました。 INT3 命令は x86-64 アーキテクチャにおける CPU 命令の一つで、ブレークポイント例外を発生させます。ブレークポイント例外の詳細は [Intel® 64 and IA-32 Architectures Software Developer Manuals](https://www.intel.com/content/www/us/en/developer/articles/technical/intel-sdm.html#three-volume#three-volume) の Volume 3A の `7.15 EXCEPTION AND INTERRUPT REFERENCE` に記載があります。
+最後に、 INT3 命令について解説しておきます。今回、命令の先頭1バイトを INT3 命令に置き換えることで、ブレークポイントを実装しました。 INT3 命令は x86-64 アーキテクチャにおける CPU 命令の一つで、ブレークポイント例外を発生させます。ブレークポイント例外の詳細は [Intel® 64 and IA-32 Architectures Software Developer Manuals](https://www.intel.com/content/www/us/en/developer/articles/technical/intel-sdm.html) の Volume 3A の `7.15 EXCEPTION AND INTERRUPT REFERENCE` に記載があります。
 このブレークポイント例外を OS が捕捉し、 SIGTRAP シグナルを debuggee に送信します。 debuggee は SIGTRAP シグナルを受信すると一時停止するので、 debugger は `unix.Wait4` 関数で debuggee が INT3 命令によって一時停止したことを知ることができます。
 この流れをまとめたのが以下の図になります。
 
