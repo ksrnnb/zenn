@@ -11,5 +11,6 @@ chapters:
   - command
   - breakpoint-memory-1
   - breakpoint-memory-2
+  - breakpoint-source
   - stepping
   - variables
