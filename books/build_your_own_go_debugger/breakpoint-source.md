@@ -3,349 +3,7 @@ title: "ソースコードレベルのブレークポイントの実装"
 ---
 
 # ソースコードレベルのブレークポイント
-前章までメモリアドレスを指定したブレークポイントを実装してきました。ここでは、関数のシンボル、またはファイル名と行数を指定してブレークポイントを設定できるようにします。
-
-## メモリアドレスからソースコードの位置を調べる
-
-### dwarfdump で雰囲気を掴む
-
-まずは、ブレークポイントにヒットした時にソースコードを出力していきます。これを実現するにはメモリアドレスからソースコードの位置を特定する必要があります。
-メモリアドレスからソースコードの位置を特定するには、 [DWARF](https://dwarfstd.org/) というデバッグ情報のフォーマットを利用します。
-
-DWARF の雰囲気を掴むために dwarfdump を使ってみます。コマンドがない場合はインストールしておきます。
-
-```bash
-sudo apt install -y dwarfdump
-```
-
-以下のコマンドで helloworld プログラムをビルドします。
-
-```bash
-go build -o helloworld.o -gcflags "all=-N -l" ./cmd/helloworld/
-```
-
-dwarfdump でビルドしたプログラムのデバッグ情報を出力します。 `-l` オプションで .debug_line の情報だけ出力するようにします。
-
-```bash
-dwarfdump -l helloworld.o | less
-```
-
-`/main` と入力して main.go のファイルを探してみると、以下のような出力がみつかります。ここではメモリアドレスとそれに一致するファイル名、行番号が取得できていることが分かります。したがって、ビルドしたプログラムを実行している時のプログラムカウンタが分かれば、ファイル名と行番号に変換することができます。
-
-```
-.debug_line: line number info for a single cu
-Source lines (from CU-DIE at .debug_info offset 0x00002505):
-
-            NS new statement, BB new basic block, ET end of text sequence
-            PE prologue end, EB epilogue begin
-            IS=val ISA number, DI=val discriminator value
-<pc>        [lno,col] NS BB ET PE EB IS= DI= uri: "filepath"
-0x004ae5a0  [   5, 0] NS uri: "/Users/<username>/lima/sample/cmd/helloworld/main.go"
-0x004ae5aa  [   5, 0] NS PE
-0x004ae5ae  [   6, 0] NS
-0x004ae5b4  [   6, 0]
-0x004ae61d  [   7, 0] NS
-0x004ae623  [   5, 0] NS
-0x004ae62d  [   5, 0] NS ET
-```
-
-ビルドしたファイルのデバッグ情報が得られることが分かったので、 Go がサポートしてる DWARF のバージョンを確認しておきます。 objdump コマンドで `--dwarf=info` を指定すると Compilation Unit の Version というフィールドで確認することができます。
-
-以下のコマンドの出力から、 DWARF 4 を利用していることが分かります。詳細は [DWARF 標準](https://dwarfstd.org/download.html)でダウンロードできるので、気になる方はダウンロードして読んでみてください。
-
-```bash
-objdump --dwarf=info helloworld.o | less
-
-# helloworld.o:     file format elf64-x86-64
-
-# Contents of the .debug_info section:
-
-#   Compilation Unit @ offset 0:
-#    Length:        0x2ab (32-bit)
-#    Version:       4
-#    Abbrev Offset: 0
-#    Pointer Size:  8
-```
-
-### メモリアドレスからソースコードの位置を取得する実装
-メモリアドレスとソースコードのファイル名と行番号の対応が取得できることが分かったので、ソースコードの出力を実装していきます。
-
-最初にファイルを追加します。
-
-```diff
-go-debugger/
-  └── debugger
-     ├── breakpoint.go
-     ├── debugger.go
-     ├── register.go
-+    └── source_code_locator.go
-```
-
-プログラムカウンタからファイル名、行番号に変換するメソッドを実装していくので、 interface を定義しておきます。その実装は SourceCodeLocator になり、 gosym.Table と dwarf.Data のポインタをフィールドとして持ちます。 Go は [debug/dwarf](https://pkg.go.dev/debug/dwarf) や [debug/gosym](https://pkg.go.dev/debug/gosym) など、デバッグに便利な標準パッケージが用意されているのでそれらを利用していきます。
-
-```go:go-debuger/debugger/source_code_locator.go
-package debugger
-
-import (
-	"debug/dwarf"
-	"debug/elf"
-	"debug/gosym"
-	"errors"
-)
-
-type Locator interface {
-	PCToFileLine(pc uint64) (filename string, line int)
-}
-
-// SourceCodeLocator converts memory address to file name and line number.
-type SourceCodeLocator struct {
-	symbolTable *gosym.Table
-	dwarfData   *dwarf.Data
-}
-```
-
-SourceCodeLocator の初期化処理は以下のようになります。この処理はコメントにも書いていますが、 [pclntab_test.go](https://cs.opensource.google/go/go/+/refs/tags/go1.23.2:src/debug/gosym/pclntab_test.go;l=86) のコードを参考にしています。
-
-```go:go-debuger/debugger/source_code_locator.go
-// This implementation is based on the process in pclntab_test.go file.
-// https://cs.opensource.google/go/go/+/refs/tags/go1.23.2:src/debug/gosym/pclntab_test.go;l=86
-func NewSourceCodeLocator(debuggeePath string) (*SourceCodeLocator, error) {
-	f, err := elf.Open(debuggeePath)
-	if err != nil {
-		return nil, err
-	}
-	defer f.Close()
-
-	s := f.Section(".gosymtab")
-	if s == nil {
-		return nil, errors.New(".gosymtab section is not found")
-	}
-
-	symdata, err := s.Data()
-	if err != nil {
-		return nil, err
-	}
-
-	pclndata, err := f.Section(".gopclntab").Data()
-	if err != nil {
-		return nil, err
-	}
-
-	pcln := gosym.NewLineTable(pclndata, f.Section(".text").Addr)
-
-	table, err := gosym.NewTable(symdata, pcln)
-	if err != nil {
-		return nil, err
-	}
-
-	dwarfData, err := f.DWARF()
-	if err != nil {
-		return nil, err
-	}
-
-	return &SourceCodeLocator{
-		symbolTable: table,
-		dwarfData:   dwarfData,
-	}, nil
-
-}
-```
-
-プログラムカウンタからファイル名と行番号を取得するには、 [gosym.PCToLine](https://pkg.go.dev/debug/gosym#Table.PCToLine) を使います。本来は DWARF の Compilation Units を走査して、対応する DIE(Debugging Information Entry) を探す必要があるのですが、標準パッケージで用意されているメソッドを呼ぶだけでいいので、非常に楽です。
-
-```go:go-debuger/debugger/source_code_locator.go
-func (l *SourceCodeLocator) PCToFileLine(pc uint64) (filename string, line int) {
-	fn, ln, _ := l.symbolTable.PCToLine(pc)
-	return fn, ln
-}
-```
-
-## 現在のソースコードの位置を出力する
-
-次に、出力用の関数を実装するファイルを作成します。
-
-```diff
-go-debugger/
-  └── debugger
-     ├── breakpoint.go
-     ├── debugger.go
-     ├── register.go
-     ├── source_code_locator.go
-+    └── source_code_printer.go
-```
-
-少し長くなりますが、出力用の関数は以下になります。引数に渡した reader がソースコードで、 os.File などで渡されることを想定しています。インターフェースなので他の方でも問題ありません。さらに現在行を強調するために currentLine を引数として受け取ります。lineRange は currentLine から前後何行を表示するのかを指定します。
-
-printSourceCode 関数の最初は、 startLine 行目から endLine 行目まで出力するため、値を簡単に計算しています。
-
-```go:go-debuger/debugger/source_code_printer.go
-package debugger
-
-import (
-	"bufio"
-	"fmt"
-	"io"
-)
-
-// how many lines from given line number
-const lineRange = 5
-
-// printSourceCode prints out source code passed as a reader, clealy emphasize the currrent line.
-func printSourceCode(reader io.Reader, currentLine int) {
-	startLine := 1
-	if currentLine > lineRange {
-		startLine = currentLine - lineRange
-	}
-	endLine := currentLine + lineRange
-	scanLine := 1
-
-    // ...
-}
-```
-
-出力する文字列を格納するために lines 変数を用意しておきます。その後、ソースコードを bufio.Scanner として1行ずつ読み込んでいきます。
-startLine までは何もしないで continue して、 endLine を超えた場合は break します。 `startLine <= scanLine <= endLine` を満たす場合は、 scanLine 行目のソースコードを lines に格納します。 scanLine が currentLine と一致する場合は強調するために `> ` を先頭に追加します。
-
-Scan が終了したら、 lines 変数をもとにソースコードを出力していきます。
-
-```go:go-debuger/debugger/source_code_printer.go
-func printSourceCode(reader io.Reader, currentLine int) {
-    // ...
-    var lines []string
-	scanner := bufio.NewScanner(reader)
-	for scanner.Scan() {
-		if scanLine < startLine {
-			scanLine++
-			continue
-		}
-		if scanLine > endLine {
-			break
-		}
-
-		text := scanner.Text()
-		if scanLine == currentLine {
-			text = fmt.Sprintf("> %d %s", scanLine, text)
-		} else {
-			text = fmt.Sprintf("  %d %s", scanLine, text)
-		}
-		lines = append(lines, text)
-		scanLine++
-	}
-
-	for _, text := range lines {
-		fmt.Printf("%s\n", text)
-	}
-}
-```
-
-あとはこれらを使っていきましょう。まずは Debugger 構造体のメソッドを更新します。
-
-```diff:go-debuger/debugger/debugger.go
-type Debugger struct {
-	config      *Config
-	pid         int
-	breakpoints map[uint64]*Breakpoint
-+	locator     Locator
-}
-
-- func NewDebugger(config *Config) (*Debugger, error) {
-+ func NewDebugger(config *Config, locator Locator) (*Debugger, error) {
-	d := &Debugger{
-		config:      config,
-		breakpoints: make(map[uint64]*Breakpoint),
-+		locator:     locator,
-	}
-	if err := d.Launch(); err != nil {
-		return nil, err
-	}
-
-	return d, nil
-}
-```
-
-Debugger 構造体のメソッドを作成して、プログラムカウンタからファイル名と行番号を取得します。その後、ファイルを開いてソースコードを出力する関数を実行します。
-
-```go:go-debuger/debugger/debugger.go
-func (d *Debugger) printSourceCode() error {
-	pc, err := d.getPC()
-	if err != nil {
-		return err
-	}
-
-	filename, line := d.locator.PCToFileLine(pc)
-	f, err := os.Open(filename)
-	if err != nil {
-		return err
-	}
-	defer f.Close()
-
-	printSourceCode(f, line)
-
-	return nil
-
-}
-```
-
-ブレークポイントにヒットした時に d.printSourceCode を実行するようにします。
-
-```diff:go-debuger/debugger/debugger.go
-func (d *Debugger) onBreakpointHit() error {
-    ...
-
-	fmt.Printf("hit breakpoint at 0x%x\n", previousPC)
-
-+	if err := d.printSourceCode(); err != nil {
-+		return err
-+	}
-
-	return nil
-}
-```
-
-あとは Debugger 初期化時に SourceCodeLocator を渡します。
-
-```diff:go-debuger/main.go
-func main() {
-	...
-	defer cleanup()
-
-+	locator, err := debugger.NewSourceCodeLocator(absDebuggeePath)
-+	if err != nil {
-+		fmt.Fprintf(os.Stderr, "faield to initialize source code locator: %s", err)
-+		return
-+	}
-
-	d, err := debugger.NewDebugger(&debugger.Config{
-		DebuggeePath: absDebuggeePath,
--	})
-+	},
-+		locator,
-+	)
-	...
-}
-```
-
-それでは動作確認してみます。ブレークポイントにヒットした時にソースコードが表示されるようになりました。
-
-```bash
-go run . -path ./cmd/helloworld/
-
-# go-debugger> b 4ae618
-
-# go-debugger> c
-# hit breakpoint at 0x4ae618
-#   1 package main
-#   2 
-#   3 import "fmt"
-#   4 
-#   5 func main() {
-# > 6     fmt.Println("Hello, World!")
-#   7 }
-
-# go-debugger> c
-# Hello, World!
-# go-debugger gracefully shut down
-```
+今まではメモリアドレスを指定したブレークポイントを実装してきました。ここでは、関数のシンボル、またはファイル名と行数を指定してブレークポイントを設定できるようにします。
 
 ## 関数のシンボルを指定してブレークポイントを設定する
 
@@ -397,7 +55,7 @@ dwarf.Data を走査して Compilation Unit のエントリを探します。 Co
 
 ```go:go-debuger/debugger/source_code_locator.go
 func (l *SourceCodeLocator) getPrologueEndAddress(fn *gosym.Func) (uint64, error) {
-	reader := l.dwarfData.Reader()
+	reader := l.dwf.Reader()
 	for {
 		entry, err := reader.Next()
 		if err != nil {
@@ -408,7 +66,7 @@ func (l *SourceCodeLocator) getPrologueEndAddress(fn *gosym.Func) (uint64, error
 			continue
 		}
 
-		lineReader, err := l.dwarfData.LineReader(entry)
+		lineReader, err := l.dwf.LineReader(entry)
 		if err != nil {
 			return 0, err
 		}
@@ -463,7 +121,7 @@ Source lines (from CU-DIE at .debug_info offset 0x00002505):
             PE prologue end, EB epilogue begin
             IS=val ISA number, DI=val discriminator value
 <pc>        [lno,col] NS BB ET PE EB IS= DI= uri: "filepath"
-0x004ae5a0  [   5, 0] NS uri: "/Users/kyota/lima/sample/cmd/helloworld/main.go"
+0x004ae5a0  [   5, 0] NS uri: "/Users/<username>/lima/sample/cmd/helloworld/main.go"
 0x004ae5aa  [   5, 0] NS PE
 0x004ae5ae  [   6, 0] NS
 0x004ae5b4  [   6, 0]
@@ -474,11 +132,11 @@ Source lines (from CU-DIE at .debug_info offset 0x00002505):
 
 ### 関数のシンボルからプロローグのアドレスに変換する
 プロローグエンドのアドレスが取得できるようになったら、関数のシンボルからアドレスに変換する処理を実装します。
-gosym.Table の LookupFunc メソッドは関数のシンボルから、関数のエントリーポイントのアドレスなどをもった gosym.Func 構造体を生成します。これを先ほど実装した getPrologueEndAddress に渡してプロローグエンドのアドレスを取得します。
+gosym.Table の LookupFunc メソッドは関数のシンボルから、関数のエントリポイントのアドレスなどをもった gosym.Func 構造体を生成します。これを先ほど実装した getPrologueEndAddress に渡してプロローグエンドのアドレスを取得します。
 
 ```go:go-debuger/debugger/source_code_locator.go
 func (l *SourceCodeLocator) FuncToAddr(funcSymbol string) (uint64, error) {
-	fn := l.symbolTable.LookupFunc(funcSymbol)
+	fn := l.st.LookupFunc(funcSymbol)
 	if fn == nil {
 		return 0, fmt.Errorf("failed to find function: %s", funcSymbol)
 	}
@@ -508,10 +166,6 @@ type SetBreakpointArgs struct {
 ```diff:go-debuger/debugger/debugger.go
 - func (d *Debugger) SetBreakpoint(addr uint64) error {
 + func (d *Debugger) SetBreakpoint(args SetBreakpointArgs) error {
-+	if args.Addr == 0 && args.FunctionSymbol == "" {
-+		return fmt.Errorf("address or function symbol must be given, but both are empty")
-+	}
-+
 +	var addr uint64
 +	var err error
 +	if args.Addr != 0 {
@@ -520,10 +174,14 @@ type SetBreakpointArgs struct {
 +	if args.FunctionSymbol != "" {
 +		addr, err = d.locator.FuncToAddr(args.FunctionSymbol)
 +		if err != nil {
-+			return err
++			return fmt.Errorf("failed to find symbol %s: %w", args.FunctionSymbol, err)
 +		}
 +	}
 +
++	if addr == 0 {
++		return fmt.Errorf("failed to get breakpoint address. args: %+v", args)
++	}
+
 	bp, err := NewBreakpoint(d.pid, uintptr(addr))
 	...
 }
@@ -567,4 +225,108 @@ go run . -path ./cmd/helloworld/
 ```
 
 ## ファイル名と行番号を指定してブレークポイントを設定する
-最後にファイル名と行番号を指定してブレークポイントを設定します。
+続けて、ファイル名と行番号を指定してブレークポイントを設定できるようにしていきます。
+
+### ファイル名と行番号からアドレスに変換する
+ファイル名と行番号からプログラムカウンタに変換する [LineToPC](https://pkg.go.dev/debug/gosym#Table.LineToPC) メソッドが用意されているので、それを利用します。得られたアドレスが関数のエントリポイントだった場合は、ブレークポイントに複数回ヒットすることを防ぐためにプロローグエンドのアドレスを返します。
+
+```go:go-debuger/debugger/source_code_locator.go
+func (l *SourceCodeLocator) FileLineToAddr(filename string, line int) (uint64, error) {
+	addr, fn, err := l.st.LineToPC(filename, line)
+	if err != nil {
+		return 0, fmt.Errorf("failed to get addr by filename %s and line %d: %s", filename, line, err)
+	}
+
+	if addr == fn.Entry {
+		return l.getPrologueEndAddress(fn)
+	}
+
+	return addr, nil
+}
+```
+
+### break コマンドの更新
+
+続いて break コマンドを更新していきます。まずは引数としてファイル名、行番号を受け取れるようにします。
+
+```diff:go-debuger/debugger/debugger.go
+type SetBreakpointArgs struct {
+	Addr uint64
+	// FunctionSymbol is <package name>.<function name> like main.main
+	FunctionSymbol string
++	Filename       string
++	Line           int
+}
+```
+
+ファイル名と行番号が指定された場合は、先ほど定義した FileLineToAddr メソッドを実行してアドレスに変換します。このアドレスを使用してブレークポイントを設定します。
+
+```diff:go-debuger/debugger/debugger.go
+func (d *Debugger) SetBreakpoint(args SetBreakpointArgs) error {
+	...
+	if args.FunctionSymbol != "" {
+		...
+	}
++	if args.Filename != "" && args.Line != 0 {
++		addr, err = d.locator.FileLineToAddr(args.Filename, args.Line)
++		if err != nil {
++			return fmt.Errorf("failed to find file %s and line %d: %w", args.Filename, args.Line, err)
++		}
++	}
+	...
+}
+```
+
+break コマンドの関数を更新し、ファイル名と行番号を break コマンドの引数として渡せるようにします。
+
+```diff:go-debuger/terminal/command.go
++// setBreakpoint set breakpoint at given address, function or filename and line.
++// address:           break 0xaaaa
++// function:          break main.main
++// filename and line: break /path/to/file 20
+func setBreakpoint(dbg *debugger.Debugger, args []string) error {
+	...
+	if err != nil {
+-		return dbg.SetBreakpoint(debugger.SetBreakpointArgs{FunctionSymbol: args[0]})
++		if len(args) == 1 {
++			return dbg.SetBreakpoint(debugger.SetBreakpointArgs{FunctionSymbol: args[0]})
++		} else if len(args) == 2 {
++			line, err := strconv.Atoi(args[1])
++			if err != nil {
++				return fmt.Errorf("failed to parse line number: %w", err)
++			}
++
++			return dbg.SetBreakpoint(debugger.SetBreakpointArgs{
++				Filename: args[0],
++				Line:     line,
++			})
++		} else {
++			return errors.New("length of args must be less than or equal to 2")
++		}
+	}
+	...
+}
+```
+
+実装が完了したので、動作を確認してみましょう。
+5行目の関数のエントリポイントにブレークポイントを設定した結果が以下になります。意図した位置にブレークポイントが設定できていることが分かります。ファイル名は絶対パスを渡す必要があるので注意してください。
+
+```bash
+go run . -path ./cmd/helloworld/
+
+go-debugger> b /Users/<username>/lima/sample/cmd/helloworld/main.go 5
+
+# go-debugger> c
+# hit breakpoint at 0x4ae5aa
+#   1 package main
+#   2 
+#   3 import "fmt"
+#   4 
+# > 5 func main() {
+#   6     fmt.Println("Hello, World!")
+#   7 }
+
+# go-debugger> c
+# Hello, World!
+# go-debugger gracefully shut down
+```
