@@ -17,13 +17,17 @@ Linux ホストマシンを持っている方はそちらを使用するとい�
 他の環境の場合や、最新の情報は Lima の[ドキュメント](https://lima-vm.io/docs/installation/)を参照してください。
 
 ### Lima のインストール
-まずはホストマシンに Lima をインストールします。
+まずはホストマシンに Lima をインストールします。また、Lima はデフォルトで [QEMU](https://www.qemu.org/) を使用して x86-64 アーキテクチャの仮想化を行うため、こちらもインストールします。
 
 ```shell
-brew install lima
+brew install lima qemu
 
 limactl --version
 # limactl version 0.23.2
+
+qemu-img --version
+# qemu-img version 9.1.2
+# Copyright (c) 2003-2024 Fabrice Bellard and the QEMU Project developers
 ```
 
 ### Lima のインスタンスを作成
