@@ -112,7 +112,7 @@ func (d *Debugger) Quit() error {
 	...
 }
 
-+ func (d *Debugger) SetBreakpoint(addr uint64) error {
++func (d *Debugger) SetBreakpoint(addr uint64) error {
 +	bp, err := NewBreakpoint(d.pid, uintptr(addr))
 +	if err != nil {
 +		return err
@@ -121,7 +121,7 @@ func (d *Debugger) Quit() error {
 +	d.breakpoints[addr] = bp
 +
 +	return nil
-+ }
++}
 ```
 
 debuggee が INT3 命令を実行すると SIGTRAP シグナルを受信して一時停止するので、その場合はブレークポイントにヒットしたということを出力するようにします。
@@ -180,7 +180,7 @@ func quit(dbg *debugger.Debugger, args []string) error {
 	return dbg.Quit()
 }
 
-+ func setBreakpoint(dbg *debugger.Debugger, args []string) error {
++func setBreakpoint(dbg *debugger.Debugger, args []string) error {
 +	if len(args) == 0 {
 +		return errors.New("length of args must be greater than 0")
 +	}
@@ -191,7 +191,7 @@ func quit(dbg *debugger.Debugger, args []string) error {
 +	}
 +
 +	return dbg.SetBreakpoint(addr)
-+ }
++}
 ```
 
 # ブレークポイントの動作確認
@@ -333,7 +333,7 @@ if err := cmdFn(t.debugger, args); err != nil {
 ```bash
 go run . -path ./cmd/helloworld/
 
-# go-debugger> b 4ae618                  
+# go-debugger> b 4ae618
 
 # go-debugger> c
 # hit breakpoint!
