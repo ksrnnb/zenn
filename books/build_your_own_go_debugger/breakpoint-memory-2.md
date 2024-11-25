@@ -278,9 +278,9 @@ func (d *Debugger) SetBreakpoint(addr uint64) error {
 	...
 }
 
-+ func (d *Debugger) DumpRegisters() error {
++func (d *Debugger) DumpRegisters() error {
 +	return dumpRegisters(d.pid)
-+ }
++}
 ```
 
 最後に、 command を定義します。
@@ -304,9 +304,9 @@ func NewCommands() *Commands {
 
 ...
 
-+ func dumpRegisters(dbg *debugger.Debugger, args []string) error {
++func dumpRegisters(dbg *debugger.Debugger, args []string) error {
 +	return dbg.DumpRegisters()
-+ }
++}
 ```
 
 実装が終わったら、動作確認しておきましょう。 dump を実行すると各レジスタの値が出力されます。デバッガ実装中にレジスタの値を確認したくなったら dump を実行すると便利です。

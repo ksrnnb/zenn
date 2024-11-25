@@ -256,8 +256,8 @@ type Debugger struct {
 +	locator     Locator
 }
 
-- func NewDebugger(config *Config) (*Debugger, error) {
-+ func NewDebugger(config *Config, locator Locator) (*Debugger, error) {
+-func NewDebugger(config *Config) (*Debugger, error) {
++func NewDebugger(config *Config, locator Locator) (*Debugger, error) {
 	d := &Debugger{
 		config:      config,
 		breakpoints: make(map[uint64]*Breakpoint),
