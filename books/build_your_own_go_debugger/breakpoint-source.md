@@ -20,7 +20,7 @@ Source lines (from CU-DIE at .debug_info offset 0x00002505):
             PE prologue end, EB epilogue begin
             IS=val ISA number, DI=val discriminator value
 <pc>        [lno,col] NS BB ET PE EB IS= DI= uri: "filepath"
-0x004ae5a0  [   5, 0] NS uri: "/Users/<username>/lima/sample/cmd/helloworld/main.go"
+0x004ae5a0  [   5, 0] NS uri: "/Users/<username>/lima/go-debugger/cmd/helloworld/main.go"
 0x004ae5aa  [   5, 0] NS PE
 0x004ae5ae  [   6, 0] NS
 0x004ae5b4  [   6, 0]
@@ -121,7 +121,7 @@ Source lines (from CU-DIE at .debug_info offset 0x00002505):
             PE prologue end, EB epilogue begin
             IS=val ISA number, DI=val discriminator value
 <pc>        [lno,col] NS BB ET PE EB IS= DI= uri: "filepath"
-0x004ae5a0  [   5, 0] NS uri: "/Users/<username>/lima/sample/cmd/helloworld/main.go"
+0x004ae5a0  [   5, 0] NS uri: "/Users/<username>/lima/go-debugger/cmd/helloworld/main.go"
 0x004ae5aa  [   5, 0] NS PE
 0x004ae5ae  [   6, 0] NS
 0x004ae5b4  [   6, 0]
@@ -131,8 +131,16 @@ Source lines (from CU-DIE at .debug_info offset 0x00002505):
 ```
 
 ### 関数のシンボルからプロローグのアドレスに変換する
-プロローグエンドのアドレスが取得できるようになったら、関数のシンボルからアドレスに変換する処理を実装します。
-gosym.Table の LookupFunc メソッドは関数のシンボルから、関数のエントリポイントのアドレスなどをもった gosym.Func 構造体を生成します。これを先ほど実装した getPrologueEndAddress に渡してプロローグエンドのアドレスを取得します。
+プロローグエンドのアドレスが取得できるようになったら、関数のシンボルからアドレスに変換する処理を実装します。まずは、 interface を更新しておきます。
+
+```diff:go-debuger/debugger/source_code_locator.go
+type Locator interface {
+	PCToFileLine(pc uint64) (filename string, line int)
++	FuncToAddr(funcSymbol string) (uint64, error)
+}
+```
+
+FuncToAddr を実装します。gosym.Table の [LookupFunc](https://pkg.go.dev/debug/gosym#Table.LookupFunc) メソッドは関数のシンボルから、関数のエントリポイントのアドレスなどをもった gosym.Func 構造体を生成します。これを先ほど実装した getPrologueEndAddress に渡してプロローグエンドのアドレスを取得します。
 
 ```go:go-debuger/debugger/source_code_locator.go
 func (l *SourceCodeLocator) FuncToAddr(funcSymbol string) (uint64, error) {
@@ -164,8 +172,8 @@ type SetBreakpointArgs struct {
 定義した引数の型を使用して、関数のシンボルが渡されたときはアドレスに変換する処理を入れます。
 
 ```diff:go-debuger/debugger/debugger.go
-- func (d *Debugger) SetBreakpoint(addr uint64) error {
-+ func (d *Debugger) SetBreakpoint(args SetBreakpointArgs) error {
+-func (d *Debugger) SetBreakpoint(addr uint64) error {
++func (d *Debugger) SetBreakpoint(args SetBreakpointArgs) error {
 +	var addr uint64
 +	var err error
 +	if args.Addr != 0 {
@@ -181,7 +189,7 @@ type SetBreakpointArgs struct {
 +	if addr == 0 {
 +		return fmt.Errorf("failed to get breakpoint address. args: %+v", args)
 +	}
-
++
 	bp, err := NewBreakpoint(d.pid, uintptr(addr))
 	...
 }
@@ -225,7 +233,14 @@ go run . -path ./cmd/helloworld/
 ```
 
 ## ファイル名と行番号を指定してブレークポイントを設定する
-続けて、ファイル名と行番号を指定してブレークポイントを設定できるようにしていきます。
+続けて、ファイル名と行番号を指定してブレークポイントを設定できるようにしていきます。まずは interface を更新します。
+```diff:go-debuger/debugger/source_code_locator.go
+type Locator interface {
+	PCToFileLine(pc uint64) (filename string, line int)
+	FuncToAddr(funcSymbol string) (uint64, error)
++	FileLineToAddr(filename string, line int) (uint64, error)
+}
+```
 
 ### ファイル名と行番号からアドレスに変換する
 ファイル名と行番号からプログラムカウンタに変換する [LineToPC](https://pkg.go.dev/debug/gosym#Table.LineToPC) メソッドが用意されているので、それを利用します。得られたアドレスが関数のエントリポイントだった場合は、ブレークポイントに複数回ヒットすることを防ぐためにプロローグエンドのアドレスを返します。
@@ -277,8 +292,7 @@ func (d *Debugger) SetBreakpoint(args SetBreakpointArgs) error {
 }
 ```
 
-break コマンドの関数を更新し、ファイル名と行番号を break コマンドの引数として渡せるようにします。
-
+break コマンドの関数を更新し、ファイル名と行番号を break コマンドの引数として渡せるようにします。処理が複雑になってきたため、条件分岐を少し変えているので注意してください。
 ```diff:go-debuger/terminal/command.go
 +// setBreakpoint set breakpoint at given address, function or filename and line.
 +// address:           break 0xaaaa
@@ -286,26 +300,34 @@ break コマンドの関数を更新し、ファイル名と行番号を break �
 +// filename and line: break /path/to/file 20
 func setBreakpoint(dbg *debugger.Debugger, args []string) error {
 	...
-	if err != nil {
+	addr, err := strconv.ParseUint(args[0], 16, 64)
+-	if err != nil {
 -		return dbg.SetBreakpoint(debugger.SetBreakpointArgs{FunctionSymbol: args[0]})
-+		if len(args) == 1 {
-+			return dbg.SetBreakpoint(debugger.SetBreakpointArgs{FunctionSymbol: args[0]})
-+		} else if len(args) == 2 {
-+			line, err := strconv.Atoi(args[1])
-+			if err != nil {
-+				return fmt.Errorf("failed to parse line number: %w", err)
-+			}
+-	}
+-
+-	return dbg.SetBreakpoint(debugger.SetBreakpointArgs{Addr: addr})
++	if err == nil {
++		return dbg.SetBreakpoint(debugger.SetBreakpointArgs{Addr: addr})
++	}
 +
-+			return dbg.SetBreakpoint(debugger.SetBreakpointArgs{
-+				Filename: args[0],
-+				Line:     line,
-+			})
-+		} else {
-+			return errors.New("length of args must be less than or equal to 2")
++	if len(args) == 1 {
++		return dbg.SetBreakpoint(debugger.SetBreakpointArgs{FunctionSymbol: args[0]})
++	}
++
++	if len(args) == 2 {
++		line, err := strconv.Atoi(args[1])
++		if err != nil {
++			return fmt.Errorf("failed to parse line number: %w", err)
 +		}
-	}
-	...
-}
++
++		return dbg.SetBreakpoint(debugger.SetBreakpointArgs{
++			Filename: args[0],
++			Line:     line,
++		})
++	}
++
++	return errors.New("length of args must be 1 or 2")
++}
 ```
 
 実装が完了したので、動作を確認してみましょう。
@@ -314,7 +336,7 @@ func setBreakpoint(dbg *debugger.Debugger, args []string) error {
 ```bash
 go run . -path ./cmd/helloworld/
 
-go-debugger> b /Users/<username>/lima/sample/cmd/helloworld/main.go 5
+go-debugger> b /Users/<username>/lima/go-debugger/cmd/helloworld/main.go 5
 
 # go-debugger> c
 # hit breakpoint at 0x4ae5aa

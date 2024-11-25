@@ -30,7 +30,7 @@ dwarfdump でビルドしたプログラムのデバッグ情報を出力しま�
 dwarfdump -l helloworld.o | less
 ```
 
-`/main` と入力して main.go のファイルを探してみると、以下のような出力がみつかります。ここではメモリアドレスとそれに一致するファイル名、行番号が取得できていることが分かります。したがって、ビルドしたプログラムを実行している時のプログラムカウンタが分かれば、ファイル名と行番号に変換することができます。
+`/main` と入力して main.go のファイルを探してみると、以下のような結果が出力されます。
 
 ```
 .debug_line: line number info for a single cu
@@ -40,7 +40,7 @@ Source lines (from CU-DIE at .debug_info offset 0x00002505):
             PE prologue end, EB epilogue begin
             IS=val ISA number, DI=val discriminator value
 <pc>        [lno,col] NS BB ET PE EB IS= DI= uri: "filepath"
-0x004ae5a0  [   5, 0] NS uri: "/Users/<username>/lima/sample/cmd/helloworld/main.go"
+0x004ae5a0  [   5, 0] NS uri: "/Users/<username>/lima/go-debugger/cmd/helloworld/main.go"
 0x004ae5aa  [   5, 0] NS PE
 0x004ae5ae  [   6, 0] NS
 0x004ae5b4  [   6, 0]
@@ -49,9 +49,17 @@ Source lines (from CU-DIE at .debug_info offset 0x00002505):
 0x004ae62d  [   5, 0] NS ET
 ```
 
+後半部分が今回読み解きたい部分なのですが、読み方はヘッダーに記載があります。知りたい情報は pc（メモリアドレス） と lno（行番号）、そして uri（ファイルのパス）になります。
+たとえばメモリアドレスが 0x004ae5ae の場合は、 `/Users/<username>/lima/go-debugger/cmd/helloworld/main.go` の6行目に相当します。
+
+```
+<pc>        [lno,col] NS BB ET PE EB IS= DI= uri: "filepath"
+```
+
 ビルドしたファイルのデバッグ情報が得られることが分かったので、 Go がサポートしてる DWARF のバージョンを確認しておきます。 objdump コマンドで `--dwarf=info` を指定すると Compilation Unit の Version というフィールドで確認することができます。
 
-以下のコマンドの出力から、 DWARF 4 を利用していることが分かります。詳細は [DWARF 標準](https://dwarfstd.org/download.html)でダウンロードできるので、気になる方はダウンロードして読んでみてください。
+以下のコマンドの出力から、 DWARF 4 を利用していることが分かります。仕様の詳細は [DWARF 標準](https://dwarfstd.org/download.html)でダウンロードできるので、気になる方はダウンロードして読んでみてください。
+また、仕様のように細かい情報は不要で DWARF に入門したいという方には [Introduction to the DWARF Debugging Format](https://dwarfstd.org/doc/Debugging%20using%20DWARF-2012.pdf) がおすすめです。
 
 ```bash
 objdump --dwarf=info helloworld.o | less
@@ -210,8 +218,8 @@ Scan が終了したら、 lines 変数をもとにソースコードを出力�
 
 ```go:go-debuger/debugger/source_code_printer.go
 func printSourceCode(reader io.Reader, currentLine int) {
-    // ...
-    var lines []string
+	// ...
+	var lines []string
 	scanner := bufio.NewScanner(reader)
 	for scanner.Scan() {
 		if scanLine < startLine {
@@ -315,10 +323,13 @@ func main() {
 +		return
 +	}
 
-	d, err := debugger.NewDebugger(&debugger.Config{
-		DebuggeePath: absDebuggeePath,
+-	d, err := debugger.NewDebugger(&debugger.Config{
+-		DebuggeePath: absDebuggeePath,
 -	})
-+	},
++	d, err := debugger.NewDebugger(
++		&debugger.Config{
++			DebuggeePath: absDebuggeePath,
++		},
 +		locator,
 +	)
 	...
