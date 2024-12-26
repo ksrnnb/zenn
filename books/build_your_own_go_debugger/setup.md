@@ -112,7 +112,7 @@ go version
 ```
 
 ## Go プロジェクトの作成
-Go のインストールが終わったら、カレントディレクトリがマウントしているディレクトリ（今回は `/Users/<username>/lima/debugger`） となっていることを確認して、 `go mod init` を実行します。モジュールのパスは適宜変更してください。
+Go のインストールが終わったら、カレントディレクトリがマウントしているディレクトリ（今回は `/Users/<username>/lima/go-debugger`） となっていることを確認して、 `go mod init` を実行します。モジュールのパスは適宜変更してください。
 ```shell
 go mod init example.com/go-debugger
 ```
