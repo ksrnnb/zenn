@@ -82,13 +82,31 @@ func writeRegister(pid int, register Register, value uint64) error {
 
 ## ブレークポイントの無効化
 
-ブレークポイントを一時的に無効にする必要があるので、 Disable メソッドを実装します。このメソッドでは、 INT3 命令で上書きした命令を元の命令に戻します。
+ブレークポイントを一時的に無効にする必要があるので、 Disable メソッドを実装します。このメソッドでは、 INT3 命令で上書きした命令を元の命令に戻します。元の命令に戻す際に、先頭の1バイトのみ変更するようにします。
+先頭の1バイトのみ変更する理由は、意図せずブレークポイントを削除することを防ぐためです。 PtracePeekData/PtracePokeData でやりとりするデータのサイズは8バイトですが、1命令のサイズは3バイトだったり5バイトだったりとバラバラになります。そのため、元の命令のデータを8バイトそのまま書き込もうとすると、ブレークポイントを設定していたのにそれも元の命令に戻してしまう、といったことになってしまいます。コードのコメントに具体例を載せてあるので、適宜参照してください。
 
 ```go:go-debugger/debuger/breakpoint.go
 // Disable updates the instruction at the address of the breakpoint to the original instruction
 // before overwriting it with the INT3 instruction
 func (bp *Breakpoint) Disable() error {
-	_, err := syscall.PtracePokeData(bp.pid, bp.addr, bp.originalInstruction)
+	buf := make([]byte, 8)
+	_, err := syscall.PtracePeekData(bp.pid, bp.addr, buf)
+	if err != nil {
+		return err
+	}
+
+	data := binary.LittleEndian.Uint64(buf)
+	originalData := binary.LittleEndian.Uint64(bp.originalInstruction)
+	// newData replaces only the first byte of data with originalData
+	// example)
+	//   data:         0xfffec9cc68ec83cc
+	//   originalData: 0xfffec9e868ec8348
+	//   newData:      0xfffec9cc68ec8348
+	newData := (data & ^uint64(0xff)) | (originalData & 0xff)
+	newInstruction := make([]byte, 8)
+	binary.LittleEndian.PutUint64(newInstruction, newData)
+
+	_, err = syscall.PtracePokeData(bp.pid, bp.addr, newInstruction)
 	if err != nil {
 		return err
 	}
