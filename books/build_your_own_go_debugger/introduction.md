@@ -11,3 +11,6 @@ GitHub 連携しているので、誤った記載がある場合などは issue 
 https://github.com/ksrnnb/zenn/tree/main/books/build_your_own_go_debugger
 
 ※ 本書で使用している Go バージョンは 1.23.2 になります。
+
+英語に抵抗のない方は、 Simon Brand 氏の「How C++ Debuggers Work」というセッションを観てみると全体像が掴めるので先に観ておくといいかもしれません。
+https://www.youtube.com/watch?v=0DDrseUomfU

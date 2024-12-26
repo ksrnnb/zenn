@@ -83,7 +83,8 @@ func (d *Debugger) Launch() error {
 
 	d.pid = cmd.Process.Pid
 
-	if _, err := d.wait(); err != nil {
+	_, err := d.wait()
+	if err != nil {
 		return err
 	}
 

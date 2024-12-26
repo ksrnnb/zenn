@@ -127,7 +127,7 @@ func main() {
 以下のように、ビルドしたプログラムのパスが出力されていると成功です。
 
 ```shell
-$ go run . -path ./cmd/helloworld
+go run . -path ./cmd/helloworld
 # built program path is /Users/<username>/lima/go-debugger/__debug__1730159855
 ```
 
