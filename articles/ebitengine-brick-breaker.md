@@ -10,8 +10,6 @@ published: false
 # はじめに
 本記事では、 Ebitengine を使ってゲームを作る方法を簡単に学ぶため、ブロック崩しを作成します。
 
-本記事はプログラミング経験の浅い方を対象としているため、説明が冗長な部分があるかと思いますが、ご了承ください。
-
 # 開発環境構築
 ## Go のインストール
 公式ドキュメントに従って、 Go をインストールします。
@@ -53,7 +51,8 @@ $ touch main.go
 ```
 
 ## Hello, World プログラムの作成
-main.go ファイルを以下のように編集します。
+
+main.go ファイルを以下のように編集します。コードの詳細は次の章で解説するので、いったん理解しなくても大丈夫です。
 
 ```go:main.go
 package main
@@ -89,6 +88,7 @@ func main() {
 ```
 
 ## 実行
+
 コードが書けたら、下記コマンドを実行して実行します。
 
 ```bash
@@ -97,15 +97,17 @@ $ go mod tidy
 $ go run .
 ```
 
-すると、以下のような画面が出力されます。
+以下のような画面が出力されると成功です。
 
 ![Hello, World](https://storage.googleapis.com/zenn-user-upload/f8e6aae4f374-20250115.png)
 
 ## コードの解説
 
+ここから先ほど書いた Hello, World のコードを解説していきます。
+
 ### Ebitengine パッケージのインポート
 
-import 文で、 Ebitengine のパッケージをインポートしています。 `ebiten.Xxx` や `ebitenutil.Xxx` という書き方で、 Ebitengine で定義された関数などを利用することができます。
+import 文で、 Ebitengine のパッケージをインポートしています。インポートすると `ebiten.Xxx` や `ebitenutil.Xxx` という書き方で、 Ebitengine で定義された関数などを利用することができます。
 
 ```go
 package main
@@ -121,8 +123,11 @@ import (
 ### Game 構造体
 Game 構造体は以下のようになります。これは [ebiten.Game](https://pkg.go.dev/github.com/hajimehoshi/ebiten/v2#Game) インターフェースの実装になります（= Update, Draw, Layout メソッドを実装する）。
 
-# TODO: 書く！！
-ここで、 Draw 関数は、、、
+ここで、 Update メソッドは 「tick」ごとに実行されます。 tick とは、更新の時間単位で、デフォルトで1/60秒になります。すなわち1秒間に60回 Update メソッドが実行されます。 Update メソッド内でブロック崩しのボールやプレイヤーの移動の処理を書くことになりますが、ここでは何もせずに nil を返します。
+
+Update に対して Draw メソッドは「フレーム」ごとに実行されます。フレームとは、画面をレンダリングに要する時間単位のことで、ディスプレイのリフレッシュレートごとに異なる値となります。例えばリフレッシュレートが 120 Hz のディスプレイを使用している場合は、1秒間に120回 Draw メソッドが実行されます。ここでは ebitenutil.DebugPrint 関数を実行して Hello, World で出力します。
+
+これらのメソッドに関してはドキュメントの [How to code works](https://ebitengine.org/en/tour/hello_world.html#How_the_code_works) などを参照してください。
 ```go
 type Game struct{}
 
@@ -141,9 +146,7 @@ func (g *Game) Layout(outsideWidth, outsideHeight int) (screenWidth, screenHeigh
 
 ### main 関数
 
-ウィンドウサイズ、タイトルを設定して、 `ebiten.RunGame` でゲームを起動します。
-`ebiten.RunGame` の引数には Game 構造体のポインタを渡します。
-
+main 関数では、はじめにウィンドウサイズ、タイトルを設定します。その後 ebiten.RunGame でゲームを起動します。引数に Game 構造体のポインタを渡すことで、定期的に Game 構造体の Update メソッドや Draw メソッドが実行されます。
 ```go
 func main() {
 	ebiten.SetWindowSize(640, 480)
@@ -156,9 +159,10 @@ func main() {
 
 # ブロックの描画
 
+ひととおり基礎は掴めたかと思うので、ここからブロック崩しを作っていきたいと思います。まずはブロックを描画していきます。
+
 ## ブロック構造体の生成
 
-ひととおり基礎は掴めたかと思うので、ここからブロック崩しを作っていきたいと思います。まずはブロックを描画していきます。
 
 ブロックに関するコードを書くために、ファイルを作成します。
 
@@ -192,6 +196,8 @@ type Block struct {
 }
 ```
 
+![変数の説明図](https://storage.googleapis.com/zenn-user-upload/786ef52f8116-20250119.png)
+
 Block 構造体が定義できたら、ブロックのスライスを生成する関数を作成します。 blockRowNums と blockCloumnNums で指定した行列分の Block 構造体を生成してスライスに追加します。
 
 ```go:blcok.go
@@ -224,7 +230,7 @@ func generateInitialBlocks() []*Block {
 
 ## 描画
 
-まずは Game 構造体を更新します。初期化時にブロックを生成して Game 構造体が保持するようにします。
+まずは Game 構造体を更新します。 NewGame 関数でブロックを生成して Game 構造体を初期化します。
 
 ```diff:main.go
 +const (
@@ -245,7 +251,7 @@ func generateInitialBlocks() []*Block {
 +}
 ```
 
-Draw 関数を更新して、 Game 構造体がもっている Block を描画します。
+Draw メソッドを更新して、 Game 構造体がもっている Block を描画します。
 
 ```diff:main.go
 func (g *Game) Draw(screen *ebiten.Image) {
@@ -290,11 +296,12 @@ func main() {
 
 ## 実行
 コードが書けたら実行します。
+
 ```bash
 $ go run .
 ```
 
-ブロックが描画されていたら成功です。
+以下のようにブロックが描画されていたら成功です。
 
 ![ブロックの描画](https://storage.googleapis.com/zenn-user-upload/da737fe4a526-20250115.png)
 
@@ -400,7 +407,7 @@ func NewPlayer() *Player {
 }
 ```
 
-speed を定義できたら、 Update メソッドを実装します。 IsKeyPressed 関数は指定したキーを押しているかどうかを返します。左矢印キーを押している間はプレイヤーの x 座標を減らしつづけ（左方向に移動）、0より小さくなる場合は0に設定することで左端よりも向こう側に移動しないようにします。右側も同様のロジックになります。
+speed を定義できたら、 Update メソッドを実装します。 IsKeyPressed 関数は指定したキーを押しているかどうかを返します。左矢印キーを押している間はプレイヤーの x 座標を減らしつづけ（左方向に移動）、0より小さくなる場合は0に設定することで画面の左端よりも左側に移動しないようにします。右側も同様のロジックになります。
 
 ```go:main.go
 func (g *Game) Update() error {
@@ -428,7 +435,12 @@ func (g *Game) Update() error {
 go run .
 ```
 
+![プレイヤーが移動している画面](https://storage.googleapis.com/zenn-user-upload/6f7eb3656841-20250119.png)
+
+
 # ボールの描画
+
+つづいてボールを描画していきます。
 
 ## 描画
 
@@ -477,8 +489,26 @@ func NewBall() *Ball {
 }
 ```
 
-描画する処理は以下のようになります。完璧な円を描くのは難しいので、円に近い多角形を描画します。
-やや処理が複雑なので、中身は理解できなくても、この関数は円を描画するんだなと感じていただければ OK です。
+Game 構造体を初期化するときに Ball も初期化します。
+
+```diff:main.go
+type Game struct {
+	blocks []*Block
+	player *Player
++	ball   *Ball
+}
+
+func NewGame() *Game {
+	g := &Game{}
+	g.blocks = generateInitialBlocks()
+	g.player = NewPlayer()
++	g.ball = NewBall()
+
+	return g
+}
+```
+
+描画する処理は以下のようになります。完璧な円を描くのは難しいので、円に近い多角形を描画します。やや処理が複雑なので、中身は理解できなくても、この関数は円を描画するんだなと感じていただければ OK です。
 
 ```go:main.go
 // 指定した座標にボールを描画する。円に近くなるように多角形を描いている。
@@ -517,7 +547,7 @@ func (g *Game) Draw(screen *ebiten.Image) {
 go run .
 ```
 
-# TODO: 画像を貼る！！
+![ボールの描画](https://storage.googleapis.com/zenn-user-upload/b3002bb6202d-20250118.png)
 
 
 ## ボールの移動
@@ -578,9 +608,15 @@ func NewGame() *Game {
 
 ここで動作を確認しておきます。ボールが右下に向かって移動して、下端に到達したら初期位置に戻って右下に移動する、という処理が無限に続いていれば成功です。
 
-# プレイヤーとボールの衝突
+![ボールが動いている画面](https://storage.googleapis.com/zenn-user-upload/bde2e5184b47-20250119.png)
 
-ボールが移動するようになったので、プレイヤーとボールの衝突を実装します。
+# 衝突処理
+
+ここまで実装できたら、あとは衝突処理を実装することでブロック崩しが完成になります。
+
+## プレイヤーとボールの衝突
+
+プレイヤーとボールの衝突を実装します。ボールの y 軸方向の速度を反転させることで衝突を表現します。
 
 ```diff:main.go
 func (g *Game) Update() error {
@@ -601,11 +637,9 @@ func (g *Game) Update() error {
 }
 ```
 
-それでは、実際に動かしてみましょう。プレイヤーを動かして、ボールが当たると跳ね返ることを確認してください。まだブロックとボールの衝突処理は実装していないので通り抜けますが、これは次章で実装します。
+## ブロックとボールの衝突
 
-# ブロックとボールの衝突
-
-最後に、ブロックとボールの衝突を実装します。
+最後に、ブロックとボールの衝突を実装します。ボールがブロックに衝突した時も y 軸方向の速度を反転させます。また、ブロックの場合は衝突したら消える必要があるので isVisible を false にします。
 
 ```diff:main.go
 func (g *Game) Update() error {
@@ -637,9 +671,6 @@ func (g *Game) Update() error {
 
 ## 跳ね返る方向の調整
 ボールがプレイヤーと衝突したときは、y 軸方向のスピードを反転させるだけでしたが、これだと毎回同じ方向に跳ね返るのでゲーム性があまりありません。そこで、プレイヤーに衝突した位置に応じて跳ね返る向きを変えると、ゲーム性が上がります。
-
-## ブロックの横に衝突した場合の処理
-今回はボールがブロックの横に衝突した際にも y 軸方向のスピードを反転させていますが、このときは x 軸方向に反転させると、より違和感のないゲームになります。
 
 ## スタート処理の改善
 現在、毎回自動的にゲームが開始していますが、あるキー（例えばスペースキー）を押したときにゲームを開始できるようにすると、より落ち着いてゲームをプレイできます。
