@@ -125,7 +125,7 @@ Game 構造体は以下のようになります。これは [ebiten.Game](https:
 
 ここで、 Update メソッドは 「tick」ごとに実行されます。 tick とは、更新の時間単位で、デフォルトで1/60秒になります。すなわち1秒間に60回 Update メソッドが実行されます。 Update メソッド内でブロック崩しのボールやプレイヤーの移動の処理を書くことになりますが、ここでは何もせずに nil を返します。
 
-Update に対して Draw メソッドは「フレーム」ごとに実行されます。フレームとは、画面をレンダリングに要する時間単位のことで、ディスプレイのリフレッシュレートごとに異なる値となります。例えばリフレッシュレートが 120 Hz のディスプレイを使用している場合は、1秒間に120回 Draw メソッドが実行されます。ここでは ebitenutil.DebugPrint 関数を実行して Hello, World で出力します。
+Update に対して Draw メソッドは「フレーム」ごとに実行されます。フレームとは、画面をレンダリングに要する時間単位のことで、ディスプレイのリフレッシュレートごとに異なる値となります。例えばリフレッシュレートが 120 Hz のディスプレイを使用している場合は、1秒間に120回 Draw メソッドが実行されます。ここでは [ebitenutil.DebugPrint](https://pkg.go.dev/github.com/hajimehoshi/ebiten/v2/ebitenutil#DebugPrint) 関数を実行して Hello, World で出力します。
 
 これらのメソッドに関してはドキュメントの [How to code works](https://ebitengine.org/en/tour/hello_world.html#How_the_code_works) などを参照してください。
 ```go
@@ -146,7 +146,8 @@ func (g *Game) Layout(outsideWidth, outsideHeight int) (screenWidth, screenHeigh
 
 ### main 関数
 
-main 関数では、はじめにウィンドウサイズ、タイトルを設定します。その後 ebiten.RunGame でゲームを起動します。引数に Game 構造体のポインタを渡すことで、定期的に Game 構造体の Update メソッドや Draw メソッドが実行されます。
+main 関数では、 [SetWindowSize](https://pkg.go.dev/github.com/hajimehoshi/ebiten/v2#SetWindowSize) 関数でウィンドウサイズ、 [SetWindowTitle](https://pkg.go.dev/github.com/hajimehoshi/ebiten/v2#SetWindowTitle) 関数でタイトルを設定します。
+その後 [RunGame](https://pkg.go.dev/github.com/hajimehoshi/ebiten/v2#RunGame) 関数でゲームを起動します。引数に Game 構造体のポインタを渡すことで、定期的に Game 構造体の Update メソッドや Draw メソッドが実行されます。
 ```go
 func main() {
 	ebiten.SetWindowSize(640, 480)
@@ -170,13 +171,13 @@ func main() {
 touch block.go
 ```
 
-コードは以下になります。 Block 構造体が今回描画するブロックを表しています。ブロックを描画する時の座標 (x, y) や、ブロックの幅、高さ、色などの情報を持っています。
+コードは以下になります。 Block 構造体が今回描画するブロックを表しています。ブロックを描画する時の座標や、ブロックの幅、高さ、画像などの情報を持っています。
 また、ブロックの描画に必要な情報を定数として定義しています。
 
 ```go:blcok.go
 package main
 
-import "image/color"
+import "github.com/hajimehoshi/ebiten/v2"
 
 const (
 	blockRowNums    = 5  // ブロックを何行ならべるか
@@ -188,11 +189,11 @@ const (
 )
 
 type Block struct {
-	x, y      float64     // ブロックの描画位置 (x, y)。左上が (0, 0) になる
-	width     float64     // ブロックの幅
-	height    float64     // ブロックの高さ
-	isVisible bool        // ブロックが見えるかどうか。ボールが衝突したら false になる
-	color     color.Color // ブロックの色
+	x, y      float64       // ブロックの描画位置 (x, y)。左上が (0, 0) になる
+	width     float64       // ブロックの幅
+	height    float64       // ブロックの高さ
+	isVisible bool          // ブロックが見えるかどうか。ボールが衝突したら false になる
+	img       *ebiten.Image // ブロックの画像
 }
 ```
 
@@ -207,18 +208,24 @@ func generateInitialBlocks() []*Block {
 	// 指定した行、列の分だけ Block 構造体を作成してスライスに追加する
 	for row := 0; row < blockRowNums; row++ {
 		for col := 0; col < blockCloumnNums; col++ {
+			color := color.RGBA{
+				R: uint8(200 - row*30), // 何行目かで色を少し変える
+				G: uint8(200 - row*30), // 何行目かで色を少し変える
+				B: 255,
+				A: 255,
+			}
+
+			// ブロックの画像を生成
+			img := ebiten.NewImage(blockWidth, blockHeight)
+			img.Fill(color)
+
 			block := &Block{
 				x:         float64(col)*(blockWidth+blockPadding) + blockPadding,    // 左端からの距離
 				y:         float64(row)*(blockHeight+blockPadding) + blockTopOffset, // 上端からの距離
 				width:     blockWidth,
 				height:    blockHeight,
 				isVisible: true, // 初期化時は true にしてみえるようにする
-				color: color.RGBA{
-					R: uint8(200 - row*30), // 何行目かで色を少し変える
-					G: uint8(200 - row*30), // 何行目かで色を少し変える
-					B: 255,
-					A: 255,
-				},
+				img:       img,
 			}
 			blocks = append(blocks, block) // スライスに追加
 		}
@@ -260,11 +267,9 @@ func (g *Game) Draw(screen *ebiten.Image) {
 +	for _, block := range g.blocks {
 +		// isVisible == false の Block（ボールが衝突した場合）は表示しない
 +		if block.isVisible {
-+			blk := ebiten.NewImage(int(block.width), int(block.height)) // 画像の生成
-+			blk.Fill(block.color)                                       // 色の指定
-+			var opts ebiten.DrawImageOptions                            // オプションの宣言
-+			opts.GeoM.Translate(block.x, block.y)                       // 描画位置を指定
-+			screen.DrawImage(blk, &opts)                                // 画像を指定したオプションで描画
++			var opts ebiten.DrawImageOptions      // オプションの宣言
++			opts.GeoM.Translate(block.x, block.y) // 描画位置を指定
++			screen.DrawImage(block.img, &opts)    // 画像を指定したオプションで描画
 +		}
 +	}
 }
@@ -318,6 +323,12 @@ touch player.go
 ```go:player.go
 package main
 
+import (
+	"image/color"
+
+	"github.com/hajimehoshi/ebiten/v2"
+)
+
 // プレイヤーの設定
 const (
 	playerWidth    = 80                                  // プレイヤーの幅
@@ -330,14 +341,19 @@ type Player struct {
 	x, y   float64
 	width  float64
 	height float64
+	img    *ebiten.Image
 }
 
 func NewPlayer() *Player {
+	img := ebiten.NewImage(int(playerWidth), int(playerHeight))
+	img.Fill(color.White)
+
 	return &Player{
 		x:      initialPlayerX,
 		y:      initialPlayerY,
 		width:  playerWidth,
 		height: playerHeight,
+		img:    img,
 	}
 }
 ```
@@ -364,11 +380,9 @@ Draw メソッドを更新して、プレイヤーも描画します。プレイ
 ```diff:main.go
 func (g *Game) Draw(screen *ebiten.Image) {
 +	// プレイヤーの描画
-+	player := ebiten.NewImage(int(playerWidth), int(playerHeight))
-+	player.Fill(color.White)
 +	var playerOpts ebiten.DrawImageOptions
 +	playerOpts.GeoM.Translate(g.player.x, g.player.y)
-+	screen.DrawImage(player, &playerOpts)
++	screen.DrawImage(g.player.img, &playerOpts)
 
 	// ブロックの描画
 	...
