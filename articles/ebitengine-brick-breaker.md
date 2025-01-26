@@ -261,7 +261,7 @@ func generateInitialBlocks() []*Block {
 ```
 
 Draw メソッドを更新して、 Game 構造体がもっている Block を描画します。
-画像を描画するときには [ebiten.DrawImageOptions](https://pkg.go.dev/github.com/hajimehoshi/ebiten/v2#DrawImageOptions) 型の変数を宣言しておき、 [GeoM.Translate](https://pkg.go.dev/github.com/hajimehoshi/ebiten/v2#GeoM.Translate) メソッドを実行して image を移動させる準備をします。
+画像を描画するときには [ebiten.DrawImageOptions](https://pkg.go.dev/github.com/hajimehoshi/ebiten/v2#DrawImageOptions) 型の変数を宣言しておき、 [GeoM.Translate](https://pkg.go.dev/github.com/hajimehoshi/ebiten/v2#GeoM.Translate) メソッドを実行して Image を移動させる準備をします。
 その後、 [Image.DrawImage](https://pkg.go.dev/github.com/hajimehoshi/ebiten/v2#Image.DrawImage) メソッドの引数にブロックの Image と、オプションの変数を渡すことでブロックを指定した位置に描画します。
 
 GeoM の仕組みを詳しく知りたい方は公式ドキュメントの [Geometry Matrix](https://ebitengine.org/en/tour/geom.html) を読んでみてください。数学における行列の知識が必要になります。
