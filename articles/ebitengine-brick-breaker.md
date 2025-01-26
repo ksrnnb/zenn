@@ -125,7 +125,7 @@ Game 構造体は以下のようになります。これは [ebiten.Game](https:
 
 ここで、 Update メソッドは 「tick」ごとに実行されます。 tick とは、更新の時間単位で、デフォルトで1/60秒になります。すなわち1秒間に60回 Update メソッドが実行されます。 Update メソッド内でブロック崩しのボールやプレイヤーの移動の処理を書くことになりますが、ここでは何もせずに nil を返します。
 
-Update に対して Draw メソッドは「フレーム」ごとに実行されます。フレームとは、画面をレンダリングに要する時間単位のことで、ディスプレイのリフレッシュレートごとに異なる値となります。例えばリフレッシュレートが 120 Hz のディスプレイを使用している場合は、1秒間に120回 Draw メソッドが実行されます。ここでは [ebitenutil.DebugPrint](https://pkg.go.dev/github.com/hajimehoshi/ebiten/v2/ebitenutil#DebugPrint) 関数を実行して Hello, World で出力します。
+Update に対して Draw メソッドは「フレーム」ごとに実行されます。フレームとは、画面をレンダリングに要する時間単位のことで、ディスプレイのリフレッシュレートごとに異なる値となります。例えばリフレッシュレートが 120 Hz のディスプレイを使用している場合は、1秒間に120回 Draw メソッドが実行されます。ここでは [ebitenutil.DebugPrint](https://pkg.go.dev/github.com/hajimehoshi/ebiten/v2/ebitenutil#DebugPrint) 関数を実行して Hello, World を出力します。
 
 これらのメソッドに関してはドキュメントの [How to code works](https://ebitengine.org/en/tour/hello_world.html#How_the_code_works) などを参照してください。
 ```go
@@ -201,6 +201,8 @@ type Block struct {
 
 Block 構造体が定義できたら、ブロックのスライスを生成する関数を作成します。 blockRowNums と blockCloumnNums で指定した行列分の Block 構造体を生成してスライスに追加します。
 
+ここで、 [ebiten.NewImage](https://pkg.go.dev/github.com/hajimehoshi/ebiten/v2#NewImage) 関数は空の [Image](https://pkg.go.dev/github.com/hajimehoshi/ebiten/v2#Image) を返し、[Fill](https://pkg.go.dev/github.com/hajimehoshi/ebiten/v2#Image.Fill) メソッドは Image を指定した色で塗りつぶします。
+
 ```go:blcok.go
 // ゲーム開始した時のブロックを生成する
 func generateInitialBlocks() []*Block {
@@ -237,7 +239,7 @@ func generateInitialBlocks() []*Block {
 
 ## 描画
 
-まずは Game 構造体を更新します。 NewGame 関数でブロックを生成して Game 構造体を初期化します。
+まずは Game 構造体を更新し、NewGame 関数でブロックを生成して Game 構造体を初期化します。
 
 ```diff:main.go
 +const (
@@ -259,6 +261,10 @@ func generateInitialBlocks() []*Block {
 ```
 
 Draw メソッドを更新して、 Game 構造体がもっている Block を描画します。
+画像を描画するときには [ebiten.DrawImageOptions](https://pkg.go.dev/github.com/hajimehoshi/ebiten/v2#DrawImageOptions) 型の変数を宣言しておき、 [GeoM.Translate](https://pkg.go.dev/github.com/hajimehoshi/ebiten/v2#GeoM.Translate) メソッドを実行して Image を移動させる準備をします。
+その後、 [Image.DrawImage](https://pkg.go.dev/github.com/hajimehoshi/ebiten/v2#Image.DrawImage) メソッドの引数にブロックの Image と、オプションの変数を渡すことでブロックを指定した位置に描画します。
+
+GeoM の仕組みを詳しく知りたい方は公式ドキュメントの [Geometry Matrix](https://ebitengine.org/en/tour/geom.html) を読んでみてください。数学における行列の知識が必要になります。
 
 ```diff:main.go
 func (g *Game) Draw(screen *ebiten.Image) {
@@ -275,7 +281,8 @@ func (g *Game) Draw(screen *ebiten.Image) {
 }
 ```
 
-Layout メソッドを更新して、幅、高さを指定します。
+Layout メソッドを更新して、幅、高さを指定します。ウィンドウサイズを変更可能にする場合などに Layout メソッドが影響してきますが、今回はほとんど気にしなくて大丈夫です。
+
 ```diff:main.go
 func (g *Game) Layout(outsideWidth, outsideHeight int) (screenWidth, screenHeight int) {
 -	return 320, 240
@@ -421,7 +428,9 @@ func NewPlayer() *Player {
 }
 ```
 
-speed を定義できたら、 Update メソッドを実装します。 IsKeyPressed 関数は指定したキーを押しているかどうかを返します。左矢印キーを押している間はプレイヤーの x 座標を減らしつづけ（左方向に移動）、0より小さくなる場合は0に設定することで画面の左端よりも左側に移動しないようにします。右側も同様のロジックになります。
+speed を定義できたら、 Update メソッドを実装します。 [IsKeyPressed](https://pkg.go.dev/github.com/hajimehoshi/ebiten/v2#IsKeyPressed) 関数は指定したキーを押しているかどうかを返します。左矢印キーを押している間はプレイヤーの x 座標を減らしつづけ（左方向に移動）、0より小さくなる場合は0に設定することで画面の左端よりも左側に移動しないようにします。右側も同様のロジックになります。
+
+キーの一覧は[ドキュメント](https://pkg.go.dev/github.com/hajimehoshi/ebiten/v2#Key)に記載があるので、他のキーを利用したい方は参考にしてみてください。
 
 ```go:main.go
 func (g *Game) Update() error {
