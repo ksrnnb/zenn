@@ -281,7 +281,7 @@ func (g *Game) Draw(screen *ebiten.Image) {
 }
 ```
 
-Layout メソッドを更新して、幅、高さを指定します。ウィンドウサイズを変更可能にする場合などに Layout メソッドが意味を持つようになっていますが、今回はほとんど気にしなくて大丈夫です。
+Layout メソッドを更新して、幅、高さを指定します。ウィンドウサイズを変更可能にする場合などに Layout メソッドが影響してきますが、今回はほとんど気にしなくて大丈夫です。
 
 ```diff:main.go
 func (g *Game) Layout(outsideWidth, outsideHeight int) (screenWidth, screenHeight int) {
