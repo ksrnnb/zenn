@@ -125,7 +125,7 @@ Game 構造体は以下のようになります。これは [ebiten.Game](https:
 
 ここで、 Update メソッドは 「tick」ごとに実行されます。 tick とは、更新の時間単位で、デフォルトで1/60秒になります。すなわち1秒間に60回 Update メソッドが実行されます。 Update メソッド内でブロック崩しのボールやプレイヤーの移動の処理を書くことになりますが、ここでは何もせずに nil を返します。
 
-Update に対して Draw メソッドは「フレーム」ごとに実行されます。フレームとは、画面をレンダリングに要する時間単位のことで、ディスプレイのリフレッシュレートごとに異なる値となります。例えばリフレッシュレートが 120 Hz のディスプレイを使用している場合は、1秒間に120回 Draw メソッドが実行されます。ここでは [ebitenutil.DebugPrint](https://pkg.go.dev/github.com/hajimehoshi/ebiten/v2/ebitenutil#DebugPrint) 関数を実行して Hello, World で出力します。
+Update に対して Draw メソッドは「フレーム」ごとに実行されます。フレームとは、画面をレンダリングに要する時間単位のことで、ディスプレイのリフレッシュレートごとに異なる値となります。例えばリフレッシュレートが 120 Hz のディスプレイを使用している場合は、1秒間に120回 Draw メソッドが実行されます。ここでは [ebitenutil.DebugPrint](https://pkg.go.dev/github.com/hajimehoshi/ebiten/v2/ebitenutil#DebugPrint) 関数を実行して Hello, World を出力します。
 
 これらのメソッドに関してはドキュメントの [How to code works](https://ebitengine.org/en/tour/hello_world.html#How_the_code_works) などを参照してください。
 ```go
