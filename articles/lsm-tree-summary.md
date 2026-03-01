@@ -5,7 +5,7 @@ type: "tech"
 topics:
   - "database"
 published: true
-published_at: 2026-03-02 08:30
+published_at: 2026-03-03 08:30
 ---
 
 # なぜ LSM ツリーが必要か？
