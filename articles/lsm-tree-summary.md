@@ -27,7 +27,9 @@ apple を削除する場合は tombstone（墓石）という特殊なデータ�
 ![LSM ツリーの全体像](https://storage.googleapis.com/zenn-user-upload/8d14ddc2df32-20260301.png)
 
 ## MemTable と WAL
-MemTable はインメモリのテーブルで、 SSTable に書き込む前のデータになります。一番簡単に実装するには Map が適しているかと思います。 SSTable はキー順にソートされている必要があるので、 Map を使用する場合は SSTable に書き込むとき（Flush 時）にソートが必要となります。
+MemTable はインメモリのテーブルで、 SSTable に書き込む前のデータになります。 SSTable はキー順にソートされている必要があるため、 MemTable にも書き込み時点で常にキー順にソートされた状態を保つデータ構造が使われます。
+
+MemTable の実装として広く使われるのが[スキップリスト](https://ja.wikipedia.org/wiki/%E3%82%B9%E3%82%AD%E3%83%83%E3%83%97%E3%83%AA%E3%82%B9%E3%83%88)と呼ばれるデータ構造になります。比較的シンプルで面白いデータ構造なので詳細はリンクを確認してみてください。
 
 ```
 +----------------+
@@ -39,8 +41,6 @@ MemTable はインメモリのテーブルで、 SSTable に書き込む前の�
 |      ...       |
 +----------------+
 ```
-
-メモリに書き込んだ時点でソート済みの MemTable を構築したい場合は、[スキップリスト](https://ja.wikipedia.org/wiki/%E3%82%B9%E3%82%AD%E3%83%83%E3%83%97%E3%83%AA%E3%82%B9%E3%83%88)と呼ばれるデータ構造が利用されることがあります。比較的シンプルで面白いデータ構造なので詳細はリンクを確認してみてください。
 
 WAL（Write-Ahead Logging） は、障害などで MemTable に書き込んだ情報が失われないようにログファイルとしてデータを保存します。 Write-Ahead と言う言葉のとおり、 MemTable に書き込むより先にログファイルに書き込まれます。障害が起きたときは、このログファイルに書き込まれた情報から MemTable を再構築することができます。このような WAL の仕組みは PostgreSQL などのリレーショナルデータベースにおいても利用されています（[参考](https://www.postgresql.org/docs/current/wal-intro.html)）。
 
